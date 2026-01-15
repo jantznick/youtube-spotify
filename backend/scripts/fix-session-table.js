@@ -62,19 +62,38 @@ async function fixSessionTable() {
       END $$;
     `);
 
-    // Step 3: Ensure primary key exists
+    // Step 3: Ensure primary key exists (handle case where it needs to be recreated)
     await pool.query(`
       DO $$
       BEGIN
-        IF NOT EXISTS (
+        -- Drop existing primary key if it exists (to allow type changes)
+        IF EXISTS (
           SELECT 1 FROM information_schema.table_constraints 
           WHERE table_schema = 'public' 
           AND table_name = 'session' 
           AND constraint_type = 'PRIMARY KEY'
         ) THEN
-          ALTER TABLE "session" ADD CONSTRAINT "session_pkey" PRIMARY KEY ("sid");
-          RAISE NOTICE 'Added primary key to session table';
+          -- Check if the primary key constraint name
+          DECLARE
+            pk_name TEXT;
+          BEGIN
+            SELECT constraint_name INTO pk_name
+            FROM information_schema.table_constraints 
+            WHERE table_schema = 'public' 
+            AND table_name = 'session' 
+            AND constraint_type = 'PRIMARY KEY';
+            
+            EXECUTE format('ALTER TABLE "session" DROP CONSTRAINT IF EXISTS %I', pk_name);
+            RAISE NOTICE 'Dropped existing primary key';
+          END;
         END IF;
+        
+        -- Add primary key back
+        ALTER TABLE "session" ADD CONSTRAINT "session_pkey" PRIMARY KEY ("sid");
+        RAISE NOTICE 'Added primary key to session table';
+      EXCEPTION
+        WHEN duplicate_object THEN
+          RAISE NOTICE 'Primary key already exists';
       END $$;
     `);
 
