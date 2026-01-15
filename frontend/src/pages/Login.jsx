@@ -14,7 +14,7 @@ function Login() {
   const [tokenRequested, setTokenRequested] = useState(false);
   const [sixDigitCode, setSixDigitCode] = useState(['', '', '', '', '', '']);
   const navigate = useNavigate();
-  const { setUser } = useAuthStore();
+  const { setUser, isAuthenticated } = useAuthStore();
 
   // Check for token in URL - only process if we're on the /login route
   // (not /reset-password which also uses tokens)
@@ -34,6 +34,14 @@ function Login() {
         });
     }
   }, [searchParams, location.pathname, setUser, navigate]);
+
+  // Redirect if already authenticated and no token in URL
+  useEffect(() => {
+    const token = searchParams.get('token');
+    if (isAuthenticated && !token && location.pathname === '/login') {
+      navigate('/home');
+    }
+  }, [isAuthenticated, navigate, searchParams, location.pathname]);
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();

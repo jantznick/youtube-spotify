@@ -14,7 +14,7 @@ function Register() {
   const [tokenRequested, setTokenRequested] = useState(false);
   const [sixDigitCode, setSixDigitCode] = useState(['', '', '', '', '', '']);
   const navigate = useNavigate();
-  const { setUser } = useAuthStore();
+  const { setUser, isAuthenticated } = useAuthStore();
 
   // Check for token in URL
   useEffect(() => {
@@ -32,6 +32,14 @@ function Register() {
         });
     }
   }, [searchParams, setUser, navigate]);
+
+  // Redirect if already authenticated and no token in URL
+  useEffect(() => {
+    const token = searchParams.get('token');
+    if (isAuthenticated && !token) {
+      navigate('/home');
+    }
+  }, [isAuthenticated, navigate, searchParams]);
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();

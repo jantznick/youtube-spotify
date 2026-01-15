@@ -49,11 +49,11 @@ function App() {
       <Routes>
         <Route
           path="/login"
-          element={isAuthenticated ? <Navigate to="/home" /> : <Login />}
+          element={<Login />}
         />
         <Route
           path="/register"
-          element={isAuthenticated ? <Navigate to="/home" /> : <Register />}
+          element={<Register />}
         />
         <Route
           path="/forgot-password"
