@@ -70,7 +70,7 @@ function SongList({ songs, onPlay, playlists, onAddToPlaylist }) {
               </div>
             )}
             <div 
-              className="absolute inset-0 bg-black/40 md:bg-black/0 md:group-hover:bg-black/50 transition-all rounded-lg flex items-center justify-center gap-1.5 md:opacity-0 md:group-hover:opacity-100 opacity-100"
+              className="absolute inset-0 bg-black/40 md:bg-black/0 md:group-hover:bg-black/50 transition-all rounded-lg flex items-center justify-center gap-2 md:opacity-0 md:group-hover:opacity-100 opacity-100"
               onMouseEnter={() => setHoveredSongId(song.id)}
               onMouseLeave={() => setHoveredSongId(null)}
             >
@@ -79,8 +79,8 @@ function SongList({ songs, onPlay, playlists, onAddToPlaylist }) {
                 className="w-8 h-8 md:w-10 md:h-10 bg-primary/90 hover:bg-primary rounded-full flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform active:scale-95"
                 title="Add to playlist"
               >
-                <svg className="w-3.5 h-3.5 md:w-4 md:h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                <svg className="w-4 h-4 md:w-4 md:h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
               </button>
               <button 
@@ -88,8 +88,8 @@ function SongList({ songs, onPlay, playlists, onAddToPlaylist }) {
                 className="w-8 h-8 md:w-10 md:h-10 bg-accent/90 hover:bg-accent rounded-full flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform active:scale-95"
                 title="Add to queue"
               >
-                <svg className="w-3.5 h-3.5 md:w-4 md:h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                <svg className="w-4 h-4 md:w-4 md:h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
                 </svg>
               </button>
               <button 
@@ -97,10 +97,10 @@ function SongList({ songs, onPlay, playlists, onAddToPlaylist }) {
                   e.stopPropagation();
                   onPlay(song);
                 }}
-                className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-r from-primary to-primary-dark rounded-full flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform active:scale-95"
+                className="w-14 h-14 md:w-14 md:h-14 bg-gradient-to-r from-primary to-primary-dark rounded-full flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform active:scale-95"
                 title="Play now"
               >
-                <svg className="w-4 h-4 md:w-5 md:h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-6 h-6 md:w-6 md:h-6 text-white ml-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                 </svg>
               </button>

@@ -124,12 +124,27 @@ function Home() {
       <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="mb-6 lg:mb-8">
-            <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-2">
-              All Songs
-            </h1>
-            <p className="text-sm sm:text-base text-text-muted">
-              {songs.length} {songs.length === 1 ? 'song' : 'songs'} available
-            </p>
+            <div className="flex items-center gap-3 mb-4">
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('toggle-sidebar'));
+                }}
+                className="lg:hidden text-text-muted hover:text-text-primary transition-colors"
+                aria-label="Toggle menu"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-2">
+                  All Songs
+                </h1>
+                <p className="text-sm sm:text-base text-text-muted">
+                  {songs.length} {songs.length === 1 ? 'song' : 'songs'} available
+                </p>
+              </div>
+            </div>
           </div>
 
           <SongList

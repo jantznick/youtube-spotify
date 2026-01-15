@@ -39,19 +39,15 @@ function SortableQueueItem({ song, actualIndex, onRemove, onPlayNext }) {
   return (
     <div
       ref={setNodeRef}
-      style={{ ...style, touchAction: 'none' }}
+      style={style}
       className="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-hover transition-colors group"
     >
       <div
         {...attributes}
         {...listeners}
-        className="text-text-muted hover:text-text-primary transition cursor-grab active:cursor-grabbing flex-shrink-0 touch-none"
+        className="text-text-muted hover:text-text-primary transition cursor-grab active:cursor-grabbing flex-shrink-0"
         title="Drag to reorder"
         onClick={(e) => e.stopPropagation()}
-        onTouchStart={(e) => {
-          // Prevent scrolling when starting to drag
-          e.stopPropagation();
-        }}
         style={{ touchAction: 'none' }}
       >
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,6 +123,8 @@ function Player() {
     useSensor(PointerSensor, {
       activationConstraint: {
         distance: 8,
+        delay: 100,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -496,14 +494,6 @@ function Player() {
                     <div 
                       className="max-h-80 overflow-y-auto space-y-1 pr-1" 
                       style={{ touchAction: 'pan-y' }}
-                      onTouchStart={(e) => {
-                        // Allow scrolling only if not starting on a draggable item
-                        const target = e.target;
-                        const isDraggable = target.closest('[data-sortable-id]') || target.closest('[role="button"]');
-                        if (isDraggable) {
-                          e.stopPropagation();
-                        }
-                      }}
                     >
                       {queue.slice(currentIndex + 1).map((song, idx) => {
                         const actualIndex = currentIndex + 1 + idx;
