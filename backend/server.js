@@ -59,7 +59,7 @@ app.use(session({
   store: new PgSession({
     pool: pgPool,
     tableName: 'session',
-    createTableIfMissing: false, // Prisma handles table creation
+    createTableIfMissing: true, // Let connect-pg-simple create the table automatically
   }),
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
   resave: false,

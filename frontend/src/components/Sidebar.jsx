@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { playlistsAPI, userAPI } from '../api/api';
 import usePlayerStore from '../store/playerStore';
@@ -269,8 +270,8 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
         </button>
       </div>
 
-      {/* Import Playlist Modal */}
-      {showImportPlaylistModal && (
+      {/* Import Playlist Modal - Using portal to render outside sidebar */}
+      {showImportPlaylistModal && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
             <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">Import Playlist</h2>
@@ -372,11 +373,12 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Add Credential Modal */}
-      {showAddCredentialModal && (
+      {/* Add Credential Modal - Using portal to render outside sidebar */}
+      {showAddCredentialModal && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
             <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">
@@ -445,11 +447,12 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Create Playlist Modal */}
-      {showCreatePlaylistModal && (
+      {/* Create Playlist Modal - Using portal to render outside sidebar */}
+      {showCreatePlaylistModal && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
             <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">Create Playlist</h2>
@@ -496,7 +499,8 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Notification Modal */}
