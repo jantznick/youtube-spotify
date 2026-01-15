@@ -10,16 +10,15 @@ import ConfirmModal from './ConfirmModal';
 function Sidebar({ onLogout, username, playlists, onCreatePlaylist, onPlaySong, onDeletePlaylist, onRefresh }) {
   const navigate = useNavigate();
   const { setCurrentSong, setQueue, currentSong, currentPlaylist, isPlaying, togglePlay } = usePlayerStore();
-  const [showCreatePlaylistModal, setShowCreatePlaylistModal] = useState(false);
-  const [showImportPlaylistModal, setShowImportPlaylistModal] = useState(false);
-  const [importSource, setImportSource] = useState('youtube'); // 'youtube' or 'spotify'
+  const [showPlaylistModal, setShowPlaylistModal] = useState(false);
+  const [playlistMode, setPlaylistMode] = useState('create'); // 'create' or 'import'
   const [playlistName, setPlaylistName] = useState('');
   const [playlistDescription, setPlaylistDescription] = useState('');
-  const [youtubePlaylistUrl, setYoutubePlaylistUrl] = useState('');
-  const [spotifyPlaylistUrl, setSpotifyPlaylistUrl] = useState('');
+  const [importUrl, setImportUrl] = useState('');
   const [importPlaylistName, setImportPlaylistName] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
+  const [detectedSource, setDetectedSource] = useState(null); // 'youtube', 'spotify', or null
   const [notification, setNotification] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
   const [showAddCredentialModal, setShowAddCredentialModal] = useState(false);
@@ -44,21 +43,42 @@ function Sidebar({ onLogout, username, playlists, onCreatePlaylist, onPlaySong, 
     }
   };
 
+  // Detect source type from URL
+  const detectSourceType = (url) => {
+    if (!url) return null;
+    const lowerUrl = url.toLowerCase();
+    if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
+      return 'youtube';
+    }
+    if (lowerUrl.includes('spotify.com') || lowerUrl.includes('open.spotify.com')) {
+      return 'spotify';
+    }
+    return null;
+  };
+
   const handleImportPlaylist = async (e) => {
     e.preventDefault();
     setImportError('');
+    
+    // Detect source type from URL
+    const sourceType = detectSourceType(importUrl);
+    if (!sourceType) {
+      setImportError('Please enter a valid YouTube or Spotify playlist URL');
+      return;
+    }
+
     setImporting(true);
     try {
       let response;
-      if (importSource === 'youtube') {
-        response = await playlistsAPI.importYouTube(youtubePlaylistUrl, importPlaylistName);
+      if (sourceType === 'youtube') {
+        response = await playlistsAPI.importYouTube(importUrl, importPlaylistName);
       } else {
-        response = await playlistsAPI.importSpotify(spotifyPlaylistUrl, importPlaylistName);
+        response = await playlistsAPI.importSpotify(importUrl, importPlaylistName);
       }
-      setYoutubePlaylistUrl('');
-      setSpotifyPlaylistUrl('');
+      setImportUrl('');
       setImportPlaylistName('');
-      setShowImportPlaylistModal(false);
+      setDetectedSource(null);
+      setShowPlaylistModal(false);
       
       // Navigate to the new playlist page immediately
       if (response.playlist?.id) {
@@ -213,27 +233,24 @@ function Sidebar({ onLogout, username, playlists, onCreatePlaylist, onPlaySong, 
       </nav>
 
       <div className="p-3 lg:p-3 border-t border-border flex-shrink-0 mt-auto space-y-3">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowCreatePlaylistModal(true)}
-            className="flex-1 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-all flex items-center justify-center gap-2 text-sm font-medium"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add
-          </button>
-          <button
-            onClick={() => setShowImportPlaylistModal(true)}
-            className="flex-1 px-3 py-2 bg-accent/10 hover:bg-accent/20 text-accent rounded-md transition-all flex items-center justify-center gap-2 text-sm font-medium"
-            title="Import YouTube Playlist"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            Import
-          </button>
-        </div>
+        <button
+          onClick={() => {
+            setShowPlaylistModal(true);
+            setPlaylistMode('create');
+            setPlaylistName('');
+            setPlaylistDescription('');
+            setImportUrl('');
+            setImportPlaylistName('');
+            setDetectedSource(null);
+            setImportError('');
+          }}
+          className="w-full px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-all flex items-center justify-center gap-2 text-sm font-medium"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Add Playlist
+        </button>
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
             {username?.[0]?.toUpperCase() || 'U'}
@@ -265,108 +282,181 @@ function Sidebar({ onLogout, username, playlists, onCreatePlaylist, onPlaySong, 
         </button>
       </div>
 
-      {/* Import Playlist Modal - Using portal to render outside sidebar */}
-      {showImportPlaylistModal && createPortal(
+      {/* Unified Playlist Modal - Using portal to render outside sidebar */}
+      {showPlaylistModal && createPortal(
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
-            <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">Import Playlist</h2>
-            <form onSubmit={handleImportPlaylist} className="space-y-4">
-              {importError && (
-                <div className="bg-red-500/20 text-red-400 p-3 rounded">
-                  {importError}
-                </div>
-              )}
-              <div>
-                <label className="block mb-2 text-sm font-medium text-text-secondary">Source</label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setImportSource('youtube')}
-                    className={`flex-1 py-2 px-4 rounded-lg transition ${
-                      importSource === 'youtube'
-                        ? 'bg-primary text-white'
-                        : 'bg-bg-hover border border-border text-text-primary hover:bg-bg-card'
-                    }`}
-                  >
-                    YouTube
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setImportSource('spotify')}
-                    className={`flex-1 py-2 px-4 rounded-lg transition ${
-                      importSource === 'spotify'
-                        ? 'bg-primary text-white'
-                        : 'bg-bg-hover border border-border text-text-primary hover:bg-bg-card'
-                    }`}
-                  >
-                    Spotify
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="block mb-2 text-sm font-medium text-text-secondary">
-                  {importSource === 'youtube' ? 'YouTube' : 'Spotify'} Playlist URL *
-                </label>
-                <input
-                  type="url"
-                  value={importSource === 'youtube' ? youtubePlaylistUrl : spotifyPlaylistUrl}
-                  onChange={(e) => {
-                    if (importSource === 'youtube') {
-                      setYoutubePlaylistUrl(e.target.value);
-                    } else {
-                      setSpotifyPlaylistUrl(e.target.value);
-                    }
-                  }}
-                  placeholder={
-                    importSource === 'youtube'
-                      ? 'https://www.youtube.com/playlist?list=...'
-                      : 'open.spotify.com/playlist/...'
-                  }
-                  required
-                  className="w-full px-4 py-3 bg-bg-hover border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-                />
-                <p className="text-xs text-text-muted mt-2">
-                  {importSource === 'youtube'
-                    ? 'Paste a YouTube playlist URL to import all songs'
-                    : 'Paste a Spotify playlist URL. Songs will be searched on YouTube and added.'}
-                </p>
-              </div>
-              <div>
-                <label className="block mb-2 text-sm font-medium text-text-secondary">
-                  Playlist Name (optional)
-                </label>
-                <input
-                  type="text"
-                  value={importPlaylistName}
-                  onChange={(e) => setImportPlaylistName(e.target.value)}
-                  placeholder="Leave empty to use YouTube playlist name"
-                  className="w-full px-4 py-3 bg-bg-hover border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-                />
-              </div>
+            <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">
+              {playlistMode === 'create' ? 'Create Playlist' : 'Import Playlist'}
+            </h2>
+            
+            {/* Mode selector */}
+            <div className="mb-4">
               <div className="flex gap-2">
                 <button
-                  type="submit"
-                  disabled={importing}
-                  className="flex-1 py-3 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition disabled:opacity-50"
+                  type="button"
+                  onClick={() => {
+                    setPlaylistMode('create');
+                    setImportUrl('');
+                    setDetectedSource(null);
+                    setImportError('');
+                  }}
+                  className={`flex-1 py-2 px-4 rounded-lg transition ${
+                    playlistMode === 'create'
+                      ? 'bg-primary text-white'
+                      : 'bg-bg-hover border border-border text-text-primary hover:bg-bg-card'
+                  }`}
                 >
-                  {importing ? 'Importing...' : 'Import Playlist'}
+                  Create New
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setShowImportPlaylistModal(false);
-                    setYoutubePlaylistUrl('');
-                    setSpotifyPlaylistUrl('');
-                    setImportPlaylistName('');
+                    setPlaylistMode('import');
+                    setPlaylistName('');
+                    setPlaylistDescription('');
                     setImportError('');
-                    setImportSource('youtube');
                   }}
-                  className="flex-1 py-3 bg-bg-hover border border-border text-text-primary rounded-lg hover:bg-bg-card transition"
+                  className={`flex-1 py-2 px-4 rounded-lg transition ${
+                    playlistMode === 'import'
+                      ? 'bg-primary text-white'
+                      : 'bg-bg-hover border border-border text-text-primary hover:bg-bg-card'
+                  }`}
                 >
-                  Cancel
+                  Import
                 </button>
               </div>
-            </form>
+            </div>
+
+            {playlistMode === 'create' ? (
+              <form onSubmit={handleCreatePlaylist} className="space-y-4">
+                <div>
+                  <label className="block mb-2 text-sm font-medium text-text-secondary">Name</label>
+                  <input
+                    type="text"
+                    value={playlistName}
+                    onChange={(e) => setPlaylistName(e.target.value)}
+                    required
+                    className="w-full px-4 py-3 bg-bg-hover border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-2 text-sm font-medium text-text-secondary">
+                    Description (optional)
+                  </label>
+                  <textarea
+                    value={playlistDescription}
+                    onChange={(e) => setPlaylistDescription(e.target.value)}
+                    className="w-full px-4 py-3 bg-bg-hover border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+                    rows="3"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition"
+                  >
+                    Create
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlaylistModal(false);
+                      setPlaylistName('');
+                      setPlaylistDescription('');
+                    }}
+                    className="flex-1 py-3 bg-bg-hover border border-border text-text-primary rounded-lg hover:bg-bg-card transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleImportPlaylist} className="space-y-4">
+                {importError && (
+                  <div className="bg-red-500/20 text-red-400 p-3 rounded">
+                    {importError}
+                  </div>
+                )}
+                <div>
+                  <label className="block mb-2 text-sm font-medium text-text-secondary">
+                    Playlist URL *
+                  </label>
+                  <input
+                    type="url"
+                    value={importUrl}
+                    onChange={(e) => {
+                      setImportUrl(e.target.value);
+                      const detected = detectSourceType(e.target.value);
+                      setDetectedSource(detected);
+                      if (detected && importError) {
+                        setImportError('');
+                      }
+                    }}
+                    placeholder="YouTube or Spotify playlist URL"
+                    required
+                    className="w-full px-4 py-3 bg-bg-hover border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+                  />
+                  {detectedSource && (
+                    <div className="mt-2 flex items-center gap-2 text-sm">
+                      <span className="text-text-muted">Detected:</span>
+                      {detectedSource === 'youtube' ? (
+                        <div className="flex items-center gap-1.5 text-red-500">
+                          <svg className="w-4 h-4" fill="#FF0000" viewBox="0 0 24 24">
+                            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                          </svg>
+                          <span className="font-medium">YouTube</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-green-500">
+                          <svg className="w-4 h-4" fill="#1DB954" viewBox="0 0 24 24">
+                            <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.84-.179-.84-.66 0-.419.36-.719.78-.6 4.56.96 8.52 1.32 11.64 1.08.42 0 .66.3.6.66-.06.36-.3.54-.66.54zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.42 1.56-.299.421-1.02.599-1.559.3z"/>
+                          </svg>
+                          <span className="font-medium">Spotify</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-xs text-text-muted mt-2">
+                    Paste a YouTube or Spotify playlist URL. The source will be detected automatically.
+                  </p>
+                </div>
+                <div>
+                  <label className="block mb-2 text-sm font-medium text-text-secondary">
+                    Playlist Name (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={importPlaylistName}
+                    onChange={(e) => setImportPlaylistName(e.target.value)}
+                    placeholder="Leave empty to use original playlist name"
+                    className="w-full px-4 py-3 bg-bg-hover border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={importing || !detectedSource}
+                    className="flex-1 py-3 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {importing ? 'Importing...' : 'Import Playlist'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPlaylistModal(false);
+                      setImportUrl('');
+                      setImportPlaylistName('');
+                      setDetectedSource(null);
+                      setImportError('');
+                    }}
+                    className="flex-1 py-3 bg-bg-hover border border-border text-text-primary rounded-lg hover:bg-bg-card transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>,
         document.body
@@ -446,57 +536,6 @@ function Sidebar({ onLogout, username, playlists, onCreatePlaylist, onPlaySong, 
         document.body
       )}
 
-      {/* Create Playlist Modal - Using portal to render outside sidebar */}
-      {showCreatePlaylistModal && createPortal(
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
-            <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">Create Playlist</h2>
-            <form onSubmit={handleCreatePlaylist} className="space-y-4">
-              <div>
-                <label className="block mb-2 text-sm font-medium text-text-secondary">Name</label>
-                <input
-                  type="text"
-                  value={playlistName}
-                  onChange={(e) => setPlaylistName(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 bg-bg-hover border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-                />
-              </div>
-              <div>
-                <label className="block mb-2 text-sm font-medium text-text-secondary">
-                  Description (optional)
-                </label>
-                <textarea
-                  value={playlistDescription}
-                  onChange={(e) => setPlaylistDescription(e.target.value)}
-                  className="w-full px-4 py-3 bg-bg-hover border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-                  rows="3"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  className="flex-1 py-3 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition"
-                >
-                  Create
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCreatePlaylistModal(false);
-                    setPlaylistName('');
-                    setPlaylistDescription('');
-                  }}
-                  className="flex-1 py-3 bg-bg-hover border border-border text-text-primary rounded-lg hover:bg-bg-card transition"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
 
       {/* Notification Modal */}
       {notification && (
