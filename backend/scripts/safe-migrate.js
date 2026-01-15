@@ -12,8 +12,49 @@ function safeMigrate() {
       console.warn('⚠️  Session table fix had warnings, continuing...');
     }
 
+    // Check for failed migrations and resolve them
+    console.log('📋 Step 2: Checking for failed migrations...');
+    try {
+      const statusOutput = execSync('npx prisma migrate status', { 
+        encoding: 'utf-8',
+        stdio: 'pipe'
+      });
+      
+      // Check if there are failed migrations
+      if (statusOutput.includes('failed') || statusOutput.includes('P3009')) {
+        console.log('⚠️  Found failed migrations, attempting to resolve...');
+        
+        // Since fix-session-table.js already ensures the table exists and is correct,
+        // we can safely mark the failed migration as applied
+        try {
+          console.log('📋 Resolving failed session table migration...');
+          execSync('npx prisma migrate resolve --applied 20260116000000_add_session_table', { 
+            stdio: 'inherit',
+            encoding: 'utf-8'
+          });
+          console.log('✅ Failed migration resolved');
+        } catch (resolveError) {
+          // If resolve fails, try rolled-back instead
+          console.log('📋 Trying to mark migration as rolled back...');
+          try {
+            execSync('npx prisma migrate resolve --rolled-back 20260116000000_add_session_table', { 
+              stdio: 'inherit',
+              encoding: 'utf-8'
+            });
+            console.log('✅ Failed migration marked as rolled back');
+          } catch (rollbackError) {
+            console.warn('⚠️  Could not resolve failed migration automatically');
+            console.warn('⚠️  This may require manual intervention with: npx prisma migrate resolve --applied 20260116000000_add_session_table');
+          }
+        }
+      }
+    } catch (statusError) {
+      // If we can't check status, continue anyway
+      console.warn('⚠️  Could not check migration status, continuing...');
+    }
+
     // Then run migrations
-    console.log('📋 Step 2: Running Prisma migrations...');
+    console.log('📋 Step 3: Running Prisma migrations...');
     execSync('npx prisma migrate deploy', { stdio: 'inherit' });
     console.log('✅ Migrations completed successfully');
     return true;

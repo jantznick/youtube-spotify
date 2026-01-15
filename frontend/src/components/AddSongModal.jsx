@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { playlistsAPI } from '../api/api';
 import NotificationModal from './NotificationModal';
 
 function AddSongModal({ onClose, onAdd, onImportPlaylist }) {
+  const navigate = useNavigate();
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -88,12 +90,18 @@ function AddSongModal({ onClose, onAdd, onImportPlaylist }) {
     setError('');
     setLoading(true);
     try {
-      await playlistsAPI.importYouTube(youtubeUrl, playlistName);
+      const response = await playlistsAPI.importYouTube(youtubeUrl, playlistName);
       setYoutubeUrl('');
       setPlaylistName('');
       setShowPlaylistPrompt(false);
       onClose();
-      showNotification('Playlist import started! Songs will be added in the background.', 'success');
+      
+      // Navigate to the new playlist page immediately
+      if (response.playlist?.id) {
+        navigate(`/playlist/${response.playlist.id}`);
+      } else {
+        showNotification('Playlist import started! Songs will be added in the background.', 'success');
+      }
     } catch (err) {
       setError(err.message || 'Failed to start playlist import');
       showNotification(err.message || 'Failed to start playlist import', 'error');

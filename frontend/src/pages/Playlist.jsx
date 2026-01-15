@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import { playlistsAPI, songsAPI } from '../api/api';
 import usePlayerStore from '../store/playerStore';
 import useAuthStore from '../store/authStore';
@@ -20,6 +21,11 @@ function Playlist() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [notification, setNotification] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
+  const [expectedSongCount, setExpectedSongCount] = useState(null);
+  const [initialSongCount, setInitialSongCount] = useState(null);
+  const [pollingCount, setPollingCount] = useState(0);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const socketRef = useRef(null);
   const { currentSong, setCurrentSong, setQueue, currentPlaylist, isPlaying, togglePlay } = usePlayerStore();
   const { user } = useAuthStore();
 
@@ -28,21 +34,303 @@ function Playlist() {
   };
 
   useEffect(() => {
+    // Remove expectedSongs from URL if present (legacy support)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('expectedSongs')) {
+      window.history.replaceState({}, '', `/playlist/${id}`);
+    }
+    
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Socket.io connection for real-time updates (when import is in progress or metadata is loading)
+  useEffect(() => {
+    if (!user?.id || !playlist) return;
+    
+    // Get expectedSongCount from playlist object (from API) or state
+    const apiExpectedCount = playlist.expectedSongCount;
+    const currentExpectedCount = expectedSongCount || apiExpectedCount;
+    const currentCount = playlist.playlistSongs?.length || 0;
+    
+    // Connect if:
+    // 1. Metadata is still loading (name is "Loading Playlist...")
+    // 2. Import is in progress (expectedSongCount is set and not complete)
+    const isLoadingMetadata = playlist.name === 'Loading Playlist...' && !currentExpectedCount;
+    const isImportInProgress = currentExpectedCount && currentCount < currentExpectedCount;
+    
+    if (!isLoadingMetadata && !isImportInProgress) {
+      console.log('No import or metadata loading in progress, skipping Socket.io connection', {
+        name: playlist.name,
+        currentExpectedCount,
+        currentCount,
+        isLoadingMetadata,
+        isImportInProgress,
+      });
+      return;
+    }
+    
+    console.log('Connecting to Socket.io:', {
+      isLoadingMetadata,
+      isImportInProgress,
+      currentExpectedCount,
+      currentCount,
+    });
+
+    const SOCKET_URL = import.meta.env.VITE_API_URL 
+      ? import.meta.env.VITE_API_URL.replace('/api', '')
+      : window.location.origin.replace(':5173', ':3001');
+
+    console.log('Connecting to Socket.io for import progress:', SOCKET_URL);
+    
+    const socket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      withCredentials: true,
+      auth: {
+        sessionId: document.cookie
+          .split('; ')
+          .find(row => row.startsWith('connect.sid='))
+          ?.split('=')[1],
+      },
+    });
+
+    socket.on('connect', () => {
+      console.log('Socket.io connected:', socket.id);
+      socket.emit('join', user.id);
+      setSocketConnected(true);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('Socket.io disconnected:', reason);
+      setSocketConnected(false);
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket.io connection error:', error);
+      setSocketConnected(false);
+    });
+
+    // Listen for playlist metadata ready event
+    socket.on('playlist-metadata-ready', (data) => {
+      console.log('Received playlist-metadata-ready event:', data);
+      if (data.playlistId === id) {
+        // Update playlist with metadata
+        setPlaylist(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            name: data.name,
+            expectedSongCount: data.songCount,
+            sourceType: data.sourceType,
+          };
+        });
+        setExpectedSongCount(data.songCount);
+        // Reload to get full playlist data
+        loadData();
+      }
+    });
+
+    // Listen for playlist song added events
+    socket.on('playlist-song-added', (data) => {
+      console.log('Received playlist-song-added event:', data);
+      if (data.playlistId === id && data.song) {
+        // Update state directly with the new song instead of fetching entire playlist
+        setPlaylist(prev => {
+          if (!prev) return prev;
+          
+          // Check if song already exists in playlist
+          const existingIndex = prev.playlistSongs?.findIndex(
+            ps => ps.song.id === data.song.id
+          );
+          
+          if (existingIndex !== -1 && existingIndex !== undefined) {
+            // Song already exists, return unchanged
+            return prev;
+          }
+          
+          // Create new playlistSong object
+          const newPlaylistSong = {
+            id: `temp-${Date.now()}-${data.song.id}`, // Temporary ID until we reload
+            song: data.song,
+            position: data.position ?? (prev.playlistSongs?.length || 0),
+          };
+          
+          // Append to the end (backend manages positions correctly)
+          const newPlaylistSongs = [...(prev.playlistSongs || []), newPlaylistSong];
+          
+          return {
+            ...prev,
+            playlistSongs: newPlaylistSongs,
+          };
+        });
+      }
+    });
+
+    // Listen for import completion
+    socket.on('playlist-import-complete', (data) => {
+      console.log('Received playlist-import-complete event:', data);
+      if (data.playlistId === id) {
+        // Stop polling and clear expected count
+        setExpectedSongCount(null);
+        setInitialSongCount(null);
+        setPollingCount(0);
+        // Reload once to get proper IDs and updated expectedSongCount (should be null now)
+        loadData();
+      }
+    });
+
+    // Listen for refresh completion
+    socket.on('playlist-refresh-complete', (data) => {
+      console.log('Received playlist-refresh-complete event:', data);
+      if (data.playlistId === id) {
+        // Reload to get final state
+        loadData();
+      }
+    });
+
+    socketRef.current = socket;
+
+    return () => {
+      console.log('Cleaning up Socket.io connection');
+      socket.disconnect();
+    };
+  }, [user?.id, id, expectedSongCount, playlist?.expectedSongCount, playlist?.name, playlist?.playlistSongs?.length]);
+
+  // Set initial song count when playlist loads and we're expecting songs
+  useEffect(() => {
+    if (playlist && expectedSongCount && initialSongCount === null) {
+      const currentCount = Array.isArray(playlist.playlistSongs) ? playlist.playlistSongs.length : 0;
+      const targetCount = currentCount + expectedSongCount;
+      console.log('Setting initial song count:', currentCount, 'Target:', targetCount);
+      setInitialSongCount(currentCount);
+      
+      // If we've already reached the target, reload to get updated expectedSongCount from API
+      if (currentCount >= targetCount) {
+        console.log('Import already complete when page loaded');
+        setExpectedSongCount(null);
+        setInitialSongCount(null);
+        loadData();
+      }
+    }
+  }, [playlist?.id, expectedSongCount, initialSongCount, id]);
+
+  // Polling effect for importing playlists (fallback if WebSocket is not connected)
+  useEffect(() => {
+    // Only poll if WebSocket is not connected
+    if (socketConnected) {
+      console.log('WebSocket connected, skipping polling');
+      return;
+    }
+
+    if (!playlist || !expectedSongCount || initialSongCount === null) {
+      if (expectedSongCount && initialSongCount === null) {
+        console.log('Polling not started - waiting for initial song count. Expected:', expectedSongCount);
+      }
+      return;
+    }
+
+    const currentSongCount = Array.isArray(playlist.playlistSongs) ? playlist.playlistSongs.length : 0;
+    const targetCount = initialSongCount + expectedSongCount;
+    console.log('Polling check (WebSocket fallback):', { 
+      currentSongCount, 
+      initialSongCount,
+      expectedSongCount,
+      targetCount,
+      pollingCount,
+      playlistId: playlist.id,
+    });
+    
+    // Stop polling if we've reached the target count (initial + expected)
+    if (currentSongCount >= targetCount) {
+      console.log('Import complete! Reached target song count.');
+      setExpectedSongCount(null);
+      setInitialSongCount(null);
+      setPollingCount(0);
+      // Reload to get updated expectedSongCount from API (should be null)
+      loadData();
+      return;
+    }
+
+    // Stop polling if we've had 3 consecutive polls with no new songs
+    if (pollingCount >= 3) {
+      console.log('Stopping polling - 3 consecutive polls with no new songs');
+      setExpectedSongCount(null);
+      setInitialSongCount(null);
+      setPollingCount(0);
+      // Reload to get updated expectedSongCount from API
+      loadData();
+      return;
+    }
+
+    console.log('Starting polling interval (WebSocket fallback)...');
+    // Set up polling interval (10 seconds) - only used if WebSocket is disconnected
+    const interval = setInterval(async () => {
+      try {
+        const previousSongCount = Array.isArray(playlist.playlistSongs) ? playlist.playlistSongs.length : 0;
+        console.log('Polling - fetching updated playlist. Previous count:', previousSongCount);
+        
+        // Fetch updated playlist data
+        const playlistData = await playlistsAPI.getOne(id);
+        const newSongCount = Array.isArray(playlistData.playlist.playlistSongs) ? playlistData.playlist.playlistSongs.length : 0;
+        console.log('Polling - new count:', newSongCount);
+        
+        // Update playlist state and expectedSongCount from API
+        setPlaylist(playlistData.playlist);
+        if (playlistData.playlist.expectedSongCount) {
+          setExpectedSongCount(playlistData.playlist.expectedSongCount);
+        } else {
+          setExpectedSongCount(null);
+        }
+        
+        if (newSongCount === previousSongCount) {
+          // No new songs, increment polling count
+          console.log('No new songs, incrementing polling count');
+          setPollingCount(prev => prev + 1);
+        } else {
+          // Got new songs, reset polling count
+          console.log('Got new songs! Resetting polling count.');
+          setPollingCount(0);
+        }
+      } catch (error) {
+        console.error('Error polling playlist:', error);
+        setPollingCount(prev => prev + 1);
+      }
+    }, 10000); // Poll every 10 seconds
+
+    return () => {
+      console.log('Cleaning up polling interval');
+      clearInterval(interval);
+    };
+  }, [socketConnected, playlist?.id, playlist?.playlistSongs?.length, expectedSongCount, initialSongCount, pollingCount, id]);
 
   const loadData = async () => {
     try {
+      setLoading(true);
       const [playlistData, songsData, playlistsData] = await Promise.all([
         playlistsAPI.getOne(id),
         songsAPI.getAll(),
         playlistsAPI.getAll(),
       ]);
+      console.log('Loaded playlist data:', {
+        id: playlistData.playlist?.id,
+        name: playlistData.playlist?.name,
+        songCount: playlistData.playlist?.playlistSongs?.length || 0,
+        expectedSongCount: playlistData.playlist?.expectedSongCount,
+        sourceType: playlistData.playlist?.sourceType,
+      });
       setPlaylist(playlistData.playlist);
       setAllSongs(songsData.songs);
       setPlaylists(playlistsData.playlists);
+      
+      // Set expectedSongCount from API if import is in progress
+      if (playlistData.playlist?.expectedSongCount) {
+        setExpectedSongCount(playlistData.playlist.expectedSongCount);
+      } else {
+        setExpectedSongCount(null);
+      }
     } catch (error) {
       console.error('Failed to load data:', error);
+      console.error('Error details:', error.response?.data || error.message);
       showNotification('Failed to load playlist', 'error');
     } finally {
       setLoading(false);
@@ -156,10 +444,16 @@ function Playlist() {
   if (!playlist) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="text-xl">Playlist not found</div>
+        <div className="text-center">
+          <div className="text-xl mb-2">Loading Playlist Data...</div>
+          <div className="text-text-muted">Fetching playlist information...</div>
+        </div>
       </div>
     );
   }
+  
+  // Show loading state if playlist name is still "Loading Playlist..."
+  const isLoadingMetadata = playlist.name === 'Loading Playlist...' && !expectedSongCount;
 
   return (
     <div className="flex h-screen bg-bg-dark">
@@ -188,15 +482,44 @@ function Playlist() {
             </button>
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-6">
               <div className="flex-1 min-w-0">
-                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-text-primary mb-3 sm:mb-4 break-words">{playlist.name}</h1>
+                {isLoadingMetadata ? (
+                  <div className="mb-3 sm:mb-4">
+                    <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-text-primary mb-2 break-words">Loading Playlist Data...</h1>
+                    <p className="text-sm sm:text-base text-text-muted">Fetching playlist information from source...</p>
+                  </div>
+                ) : (
+                  <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-text-primary mb-3 sm:mb-4 break-words">{playlist.name}</h1>
+                )}
                 {playlist.description && (
                   <p className="text-sm sm:text-base text-text-muted mb-3 sm:mb-4 break-words">{playlist.description}</p>
                 )}
-                <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-2">
-                  <p className="text-sm sm:text-base text-text-muted">
-                    {playlist.playlistSongs?.length || 0} {playlist.playlistSongs?.length === 1 ? 'song' : 'songs'}
-                  </p>
-                  {playlist.lastSyncedAt && (
+                <div className="flex flex-col gap-3 sm:gap-4 mb-2">
+                  <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                    <p className="text-sm sm:text-base text-text-muted">
+                      {playlist.playlistSongs?.length || 0} {playlist.playlistSongs?.length === 1 ? 'song' : 'songs'}
+                    </p>
+                  </div>
+                  {expectedSongCount && initialSongCount !== null && (playlist.playlistSongs?.length || 0) < (initialSongCount + expectedSongCount) && (
+                    <div className="w-full max-w-md">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-accent">Importing songs...</span>
+                        <span className="text-sm text-text-muted">
+                          {playlist.playlistSongs?.length || 0} / {initialSongCount + expectedSongCount}
+                        </span>
+                      </div>
+                      <div className="w-full bg-bg-hover rounded-full h-2.5 overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-primary via-primary-dark to-primary rounded-full transition-all duration-500 ease-out relative overflow-hidden"
+                          style={{ 
+                            width: `${Math.min(100, ((playlist.playlistSongs?.length || 0) / (initialSongCount + expectedSongCount)) * 100)}%` 
+                          }}
+                        >
+                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {playlist.lastSyncedAt && !expectedSongCount && (
                     <p className="text-xs sm:text-sm text-text-secondary">
                       Last synced {formatDate(playlist.lastSyncedAt)}
                     </p>
@@ -280,7 +603,7 @@ function Playlist() {
           </div>
 
           {/* Songs List */}
-          {playlist.playlistSongs && playlist.playlistSongs.length > 0 ? (
+          {Array.isArray(playlist.playlistSongs) && playlist.playlistSongs.length > 0 ? (
             <div className="space-y-2">
               {playlist.playlistSongs.map((playlistSong, index) => {
                 const song = playlistSong.song;
@@ -346,7 +669,26 @@ function Playlist() {
                 </svg>
               </div>
               <p className="text-xl font-medium text-text-primary mb-2">No songs in this playlist</p>
-              {!playlist.sourceType ? (
+              {expectedSongCount && initialSongCount !== null && (playlist.playlistSongs?.length || 0) < (initialSongCount + expectedSongCount) ? (
+                <div className="w-full max-w-sm mx-auto mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-accent">Importing songs...</span>
+                    <span className="text-sm text-text-muted">
+                      {playlist.playlistSongs?.length || 0} / {initialSongCount + expectedSongCount}
+                    </span>
+                  </div>
+                  <div className="w-full bg-bg-hover rounded-full h-3 overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-primary via-primary-dark to-primary rounded-full transition-all duration-500 ease-out relative overflow-hidden"
+                      style={{ 
+                        width: `${Math.min(100, ((playlist.playlistSongs?.length || 0) / (initialSongCount + expectedSongCount)) * 100)}%` 
+                      }}
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
+                    </div>
+                  </div>
+                </div>
+              ) : !playlist.sourceType ? (
                 <>
                   <p className="text-text-muted mb-4">Add songs to get started!</p>
                   <button

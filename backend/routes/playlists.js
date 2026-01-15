@@ -2,7 +2,7 @@ import express from 'express';
 import puppeteer from 'puppeteer';
 import ytdl from 'ytdl-core';
 import https from 'https';
-import { prisma } from '../server.js';
+import { prisma, emitToUser } from '../server.js';
 
 // Helper function to wait
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -702,7 +702,7 @@ router.put('/:id/songs/reorder', async (req, res) => {
   }
 });
 
-// Import Spotify playlist (async - returns immediately, processes in background)
+// Import Spotify playlist (creates playlist immediately, fetches metadata and imports songs in background)
 router.post('/import-spotify', async (req, res) => {
   try {
     const userId = req.session.userId;
@@ -712,22 +712,43 @@ router.post('/import-spotify', async (req, res) => {
       return res.status(400).json({ error: 'Spotify playlist URL is required' });
     }
 
-    // Start async import process (don't await)
-    importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName).catch((error) => {
+    // Normalize URL
+    let normalizedSpotifyUrl = spotifyUrl;
+    if (!normalizedSpotifyUrl.startsWith('http://') && !normalizedSpotifyUrl.startsWith('https://')) {
+      normalizedSpotifyUrl = 'https://' + normalizedSpotifyUrl;
+    }
+
+    // Create playlist immediately with temporary name
+    const playlist = await prisma.playlist.create({
+      data: {
+        name: playlistName?.trim() || 'Loading Playlist...',
+        description: `Imported from Spotify playlist`,
+        sourceUrl: normalizedSpotifyUrl,
+        sourceType: 'spotify',
+        autoUpdate: false,
+        userId,
+      },
+    });
+
+    // Start async process to fetch metadata and import songs (don't await)
+    importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName, playlist.id).catch((error) => {
       console.error('Background Spotify playlist import error:', error);
     });
 
-    // Return immediately
-    res.status(202).json({
-      message: 'Spotify playlist import started. Songs will be added in the background.',
+    // Return immediately with playlist ID
+    res.status(201).json({
+      playlist: {
+        id: playlist.id,
+      },
+      message: 'Playlist import started. Loading playlist data...',
     });
   } catch (error) {
     console.error('Import Spotify playlist error:', error);
-    res.status(500).json({ error: 'Failed to start Spotify playlist import' });
+    res.status(500).json({ error: 'Failed to start playlist import' });
   }
 });
 
-// Import YouTube playlist (async - returns immediately, processes in background)
+// Import YouTube playlist (creates playlist immediately, fetches metadata and imports songs in background)
 router.post('/import-youtube', async (req, res) => {
   try {
     const userId = req.session.userId;
@@ -743,15 +764,35 @@ router.post('/import-youtube', async (req, res) => {
       return res.status(400).json({ error: 'Invalid YouTube playlist URL' });
     }
 
-    // Start async import process (don't await)
-    importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl).catch((error) => {
+    // Normalize URL
+    let normalizedYoutubeUrl = youtubeUrl;
+    if (!normalizedYoutubeUrl.startsWith('http://') && !normalizedYoutubeUrl.startsWith('https://')) {
+      normalizedYoutubeUrl = 'https://' + normalizedYoutubeUrl;
+    }
+
+    // Create playlist immediately with temporary name
+    const playlist = await prisma.playlist.create({
+      data: {
+        name: playlistName?.trim() || 'Loading Playlist...',
+        description: `Imported from YouTube playlist`,
+        sourceUrl: normalizedYoutubeUrl,
+        sourceType: 'youtube',
+        autoUpdate: false,
+        userId,
+      },
+    });
+
+    // Start async process to fetch metadata and import songs (don't await)
+    importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl, playlist.id).catch((error) => {
       console.error('Background playlist import error:', error);
     });
 
-    // Return immediately
-    res.status(202).json({
-      message: 'Playlist import started. Songs will be added in the background.',
-      playlistId: playlistId,
+    // Return immediately with playlist ID
+    res.status(201).json({
+      playlist: {
+        id: playlist.id,
+      },
+      message: 'Playlist import started. Loading playlist data...',
     });
   } catch (error) {
     console.error('Import playlist error:', error);
@@ -875,7 +916,7 @@ async function getVideoMetadata(videoId) {
 }
 
 // Async function to import playlist in background
-async function importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl) {
+async function importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl, existingPlaylistId = null) {
   try {
     // Extract video ID from original URL as fallback
     const videoIdMatch = youtubeUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
@@ -953,10 +994,17 @@ async function importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl)
     const videoIds = playlistData.videoIds || [];
     if (videoIds.length === 0) {
       console.error('No videos found in playlist');
+      // Update playlist to indicate error
+      await prisma.playlist.update({
+        where: { id: existingPlaylistId },
+        data: { name: playlistName?.trim() || 'Playlist Import Failed' },
+      });
       return;
     }
     
-    // Get playlist title if available
+    const songCount = videoIds.length;
+    
+    // Get playlist title
     let finalPlaylistName = (playlistName && playlistName.trim()) || playlistData.title || 'Imported Playlist';
     finalPlaylistName = finalPlaylistName.trim();
     // Append "- YouTube" if not already present (case-insensitive check)
@@ -965,26 +1013,33 @@ async function importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl)
       finalPlaylistName = `${finalPlaylistName} - YouTube`;
     }
     
-    // Normalize the YouTube URL for storage
-    let normalizedYoutubeUrl = youtubeUrl;
-    if (!normalizedYoutubeUrl.startsWith('http://') && !normalizedYoutubeUrl.startsWith('https://')) {
-      normalizedYoutubeUrl = 'https://' + normalizedYoutubeUrl;
+    // Get existing playlist
+    const playlist = await prisma.playlist.findUnique({
+      where: { id: existingPlaylistId },
+    });
+    if (!playlist) {
+      throw new Error('Playlist not found');
     }
     
-    // Create playlist with source URL
-    const playlist = await prisma.playlist.create({
+    // Update playlist with metadata
+    await prisma.playlist.update({
+      where: { id: playlist.id },
       data: {
         name: finalPlaylistName,
-        description: `Imported from YouTube playlist`,
-        sourceUrl: normalizedYoutubeUrl,
-        sourceType: 'youtube',
-        autoUpdate: false,
         lastSyncedAt: new Date(),
-        userId,
+        expectedSongCount: songCount,
       },
     });
+    
+    // Emit metadata via WebSocket
+    emitToUser(userId, 'playlist-metadata-ready', {
+      playlistId: playlist.id,
+      name: finalPlaylistName,
+      songCount,
+      sourceType: 'youtube',
+    });
 
-    console.log(`Starting import of ${videoIds.length} songs for playlist: ${playlist.name}`);
+    console.log(`Starting import of ${songCount} songs for playlist: ${finalPlaylistName}`);
 
     // Import each video as a song and add to playlist
     for (let i = 0; i < videoIds.length; i++) {
@@ -1021,18 +1076,41 @@ async function importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl)
         });
 
         if (!existing) {
-          await prisma.playlistSong.create({
+          const playlistSong = await prisma.playlistSong.create({
             data: {
               playlistId: playlist.id,
               songId: song.id,
               position: i,
             },
+            include: {
+              song: true,
+            },
+          });
+          
+          // Emit Socket.io event for real-time update
+          emitToUser(userId, 'playlist-song-added', {
+            playlistId: playlist.id,
+            song: playlistSong.song,
+            position: i,
+            totalSongs: videoIds.length,
+            currentIndex: i + 1,
           });
         }
       } catch (error) {
         console.error(`Error importing video ${videoId}:`, error);
       }
     }
+
+    // Clear expectedSongCount and emit completion event
+    await prisma.playlist.update({
+      where: { id: playlist.id },
+      data: { expectedSongCount: null },
+    });
+
+    emitToUser(userId, 'playlist-import-complete', {
+      playlistId: playlist.id,
+      totalSongs: videoIds.length,
+    });
 
     console.log(`Completed import of playlist: ${playlist.name}`);
   } catch (error) {
@@ -1173,12 +1251,24 @@ async function refreshYouTubePlaylistAsync(playlistId, userId, youtubePlaylistId
           }
         } else {
           // Add new song to playlist
-          await prisma.playlistSong.create({
+          const playlistSong = await prisma.playlistSong.create({
             data: {
               playlistId: playlistId,
               songId: song.id,
               position: i,
             },
+            include: {
+              song: true,
+            },
+          });
+          
+          // Emit Socket.io event for real-time update
+          emitToUser(userId, 'playlist-song-added', {
+            playlistId: playlistId,
+            song: playlistSong.song,
+            position: i,
+            totalSongs: videoIds.length,
+            currentIndex: i + 1,
           });
         }
       } catch (error) {
@@ -1213,6 +1303,11 @@ async function refreshYouTubePlaylistAsync(playlistId, userId, youtubePlaylistId
         });
       }
     }
+
+    // Emit completion event
+    emitToUser(userId, 'playlist-refresh-complete', {
+      playlistId: playlistId,
+    });
 
     console.log(`Completed refresh of playlist: ${playlistId}`);
   } catch (error) {
@@ -1297,12 +1392,24 @@ async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
           }
         } else {
           // Add new song to playlist
-          await prisma.playlistSong.create({
+          const playlistSong = await prisma.playlistSong.create({
             data: {
               playlistId: playlistId,
               songId: song.id,
               position: i,
             },
+            include: {
+              song: true,
+            },
+          });
+          
+          // Emit Socket.io event for real-time update
+          emitToUser(userId, 'playlist-song-added', {
+            playlistId: playlistId,
+            song: playlistSong.song,
+            position: i,
+            totalSongs: spotifyData.songs.length,
+            currentIndex: i + 1,
           });
         }
         
@@ -1340,6 +1447,11 @@ async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
       }
     }
 
+    // Emit completion event
+    emitToUser(userId, 'playlist-refresh-complete', {
+      playlistId: playlistId,
+    });
+
     console.log(`Completed refresh of Spotify playlist: ${playlistId}`);
   } catch (error) {
     console.error('Background playlist refresh error:', error);
@@ -1347,19 +1459,35 @@ async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
 }
 
 // Async function to import Spotify playlist in background
-async function importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName) {
+async function importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName, existingPlaylistId = null) {
   try {
     console.log(`Starting Spotify playlist import: ${spotifyUrl}`);
     
-    // Scrape Spotify playlist
+    // Get existing playlist
+    const playlist = await prisma.playlist.findUnique({
+      where: { id: existingPlaylistId },
+    });
+    if (!playlist) {
+      throw new Error('Playlist not found');
+    }
+    
+    // Step 1: Fetch playlist metadata
+    console.log('Fetching Spotify playlist metadata...');
     const spotifyData = await scrapeSpotifyPlaylistWithPuppeteer(spotifyUrl);
     
     if (!spotifyData.songs || spotifyData.songs.length === 0) {
       console.error('No songs found in Spotify playlist');
+      // Update playlist to indicate error
+      await prisma.playlist.update({
+        where: { id: playlist.id },
+        data: { name: playlistName?.trim() || 'Playlist Import Failed' },
+      });
       return;
     }
     
-    // Get playlist title
+    const songCount = spotifyData.songs.length;
+    
+    // Step 2: Get playlist title
     let finalPlaylistName = (playlistName && playlistName.trim()) || spotifyData.title || 'Imported Spotify Playlist';
     finalPlaylistName = finalPlaylistName.trim();
     // Append "- Spotify" if not already present (case-insensitive check)
@@ -1368,26 +1496,25 @@ async function importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName) {
       finalPlaylistName = `${finalPlaylistName} - Spotify`;
     }
     
-    // Normalize the Spotify URL for storage
-    let normalizedSpotifyUrl = spotifyUrl;
-    if (!normalizedSpotifyUrl.startsWith('http://') && !normalizedSpotifyUrl.startsWith('https://')) {
-      normalizedSpotifyUrl = 'https://' + normalizedSpotifyUrl;
-    }
-    
-    // Create playlist with source URL
-    const playlist = await prisma.playlist.create({
+    // Step 3: Update playlist with metadata
+    await prisma.playlist.update({
+      where: { id: playlist.id },
       data: {
         name: finalPlaylistName,
-        description: `Imported from Spotify playlist`,
-        sourceUrl: normalizedSpotifyUrl,
-        sourceType: 'spotify',
-        autoUpdate: false,
         lastSyncedAt: new Date(),
-        userId,
+        expectedSongCount: songCount,
       },
     });
+    
+    // Step 4: Emit metadata via WebSocket
+    emitToUser(userId, 'playlist-metadata-ready', {
+      playlistId: playlist.id,
+      name: finalPlaylistName,
+      songCount,
+      sourceType: 'spotify',
+    });
 
-    console.log(`Starting import of ${spotifyData.songs.length} songs for playlist: ${playlist.name}`);
+    console.log(`Starting import of ${songCount} songs for playlist: ${finalPlaylistName}`);
 
     // For each song, search YouTube and add to playlist
     for (let i = 0; i < spotifyData.songs.length; i++) {
@@ -1432,12 +1559,24 @@ async function importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName) {
         });
 
         if (!existing) {
-          await prisma.playlistSong.create({
+          const playlistSong = await prisma.playlistSong.create({
             data: {
               playlistId: playlist.id,
               songId: song.id,
               position: i,
             },
+            include: {
+              song: true,
+            },
+          });
+          
+          // Emit Socket.io event for real-time update
+          emitToUser(userId, 'playlist-song-added', {
+            playlistId: playlist.id,
+            song: playlistSong.song,
+            position: i,
+            totalSongs: spotifyData.songs.length,
+            currentIndex: i + 1,
           });
         }
         
@@ -1446,6 +1585,17 @@ async function importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName) {
         console.error(`Error importing song "${spotifySong.title}":`, error);
       }
     }
+
+    // Clear expectedSongCount and emit completion event
+    await prisma.playlist.update({
+      where: { id: playlist.id },
+      data: { expectedSongCount: null },
+    });
+
+    emitToUser(userId, 'playlist-import-complete', {
+      playlistId: playlist.id,
+      totalSongs: spotifyData.songs.length,
+    });
 
     console.log(`Completed import of Spotify playlist: ${playlist.name}`);
   } catch (error) {

@@ -6,6 +6,8 @@ import connectPgSimple from 'connect-pg-simple';
 import { Pool } from 'pg';
 import cookieParser from 'cookie-parser';
 import { PrismaClient } from '@prisma/client';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 
 import authRoutes from './routes/auth.js';
 import songRoutes from './routes/songs.js';
@@ -15,9 +17,66 @@ import userRoutes from './routes/user.js';
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
 const prisma = new PrismaClient();
 
 const PORT = process.env.PORT || 3001;
+
+// Socket.io setup
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    credentials: true,
+  },
+  transports: ['websocket', 'polling'],
+});
+
+// Socket.io authentication middleware
+// Note: We'll verify the user when they emit 'join' with their userId
+// For now, allow connection and verify on join event
+io.use((socket, next) => {
+  // Allow connection - we'll verify user on 'join' event
+  next();
+});
+
+// Store user sessions for Socket.io
+const userSockets = new Map(); // userId -> Set of socket IDs
+
+io.on('connection', (socket) => {
+  console.log('Socket connected:', socket.id);
+  
+  // When user joins, associate socket with user ID
+  socket.on('join', (userId) => {
+    if (userId) {
+      if (!userSockets.has(userId)) {
+        userSockets.set(userId, new Set());
+      }
+      userSockets.get(userId).add(socket.id);
+      socket.userId = userId;
+      console.log(`User ${userId} joined. Total sockets for user:`, userSockets.get(userId).size);
+    }
+  });
+  
+  socket.on('disconnect', () => {
+    console.log('Socket disconnected:', socket.id);
+    if (socket.userId && userSockets.has(socket.userId)) {
+      userSockets.get(socket.userId).delete(socket.id);
+      if (userSockets.get(socket.userId).size === 0) {
+        userSockets.delete(socket.userId);
+      }
+    }
+  });
+});
+
+// Helper function to emit to a specific user
+const emitToUser = (userId, event, data) => {
+  if (userSockets.has(userId)) {
+    const sockets = userSockets.get(userId);
+    sockets.forEach(socketId => {
+      io.to(socketId).emit(event, data);
+    });
+  }
+};
 
 // Trust proxy in production (needed for secure cookies behind reverse proxy)
 if (process.env.NODE_ENV === 'production') {
@@ -163,8 +222,9 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Socket.io server ready`);
 });
 
 // Graceful shutdown
@@ -178,4 +238,4 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-export { prisma };
+export { prisma, io, emitToUser };

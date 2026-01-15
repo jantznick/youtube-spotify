@@ -49,20 +49,27 @@ function Sidebar({ onLogout, username, playlists, onCreatePlaylist, onPlaySong, 
     setImportError('');
     setImporting(true);
     try {
+      let response;
       if (importSource === 'youtube') {
-        await playlistsAPI.importYouTube(youtubePlaylistUrl, importPlaylistName);
+        response = await playlistsAPI.importYouTube(youtubePlaylistUrl, importPlaylistName);
       } else {
-        await playlistsAPI.importSpotify(spotifyPlaylistUrl, importPlaylistName);
+        response = await playlistsAPI.importSpotify(spotifyPlaylistUrl, importPlaylistName);
       }
       setYoutubePlaylistUrl('');
       setSpotifyPlaylistUrl('');
       setImportPlaylistName('');
       setShowImportPlaylistModal(false);
-      // Refresh after a short delay to show the new playlist
-      setTimeout(() => {
-        onRefresh();
-      }, 1000);
-      showNotification('Playlist import started! Songs will be added in the background.', 'success');
+      
+      // Navigate to the new playlist page immediately
+      if (response.playlist?.id) {
+        navigate(`/playlist/${response.playlist.id}`);
+      } else {
+        // Fallback: refresh and show notification
+        setTimeout(() => {
+          onRefresh();
+        }, 1000);
+        showNotification('Playlist import started! Songs will be added in the background.', 'success');
+      }
     } catch (error) {
       setImportError(error.message || 'Failed to start playlist import');
       showNotification(error.message || 'Failed to start playlist import', 'error');

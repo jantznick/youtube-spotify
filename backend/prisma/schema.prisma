@@ -44,6 +44,7 @@ model Playlist {
   sourceType  String?  // 'youtube', 'spotify', or null for manual playlists
   autoUpdate  Boolean  @default(false) // Whether to periodically refetch from source
   lastSyncedAt DateTime? // When the playlist was last refreshed from source
+  expectedSongCount Int? // Expected number of songs during import (null when complete)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
