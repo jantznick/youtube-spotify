@@ -39,15 +39,20 @@ function SortableQueueItem({ song, actualIndex, onRemove, onPlayNext }) {
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{ ...style, touchAction: 'none' }}
       className="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-hover transition-colors group"
     >
       <div
         {...attributes}
         {...listeners}
-        className="text-text-muted hover:text-text-primary transition cursor-grab active:cursor-grabbing flex-shrink-0"
+        className="text-text-muted hover:text-text-primary transition cursor-grab active:cursor-grabbing flex-shrink-0 touch-none"
         title="Drag to reorder"
         onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => {
+          // Prevent scrolling when starting to drag
+          e.stopPropagation();
+        }}
+        style={{ touchAction: 'none' }}
       >
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
@@ -64,13 +69,13 @@ function SortableQueueItem({ song, actualIndex, onRemove, onPlayNext }) {
         <div className="text-xs font-medium text-text-primary truncate">{song.title}</div>
         <div className="text-xs text-text-muted truncate">{song.artist || 'Unknown Artist'}</div>
       </div>
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
         <button
           onClick={(e) => {
             e.stopPropagation();
             onPlayNext(song, actualIndex);
           }}
-          className="text-text-muted hover:text-accent transition-all p-1"
+          className="text-text-muted hover:text-accent transition-all p-1 active:scale-95"
           title="Play next"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -78,8 +83,11 @@ function SortableQueueItem({ song, actualIndex, onRemove, onPlayNext }) {
           </svg>
         </button>
         <button
-          onClick={() => onRemove(actualIndex)}
-          className="text-text-muted hover:text-red-400 transition-all p-1"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove(actualIndex);
+          }}
+          className="text-text-muted hover:text-red-400 transition-all p-1 active:scale-95"
           title="Remove from queue"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -116,7 +124,11 @@ function Player() {
   const location = useLocation();
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -443,8 +455,11 @@ function Player() {
                     const overMatch = over.id.toString().match(/queue-item-(\d+)$/);
                     
                     if (activeMatch && overMatch) {
-                      const activeIdx = parseInt(activeMatch[1]) - (currentIndex + 1);
-                      const overIdx = parseInt(overMatch[1]) - (currentIndex + 1);
+                      const activeActualIndex = parseInt(activeMatch[1]);
+                      const overActualIndex = parseInt(overMatch[1]);
+                      
+                      const activeIdx = activeActualIndex - (currentIndex + 1);
+                      const overIdx = overActualIndex - (currentIndex + 1);
 
                       if (activeIdx >= 0 && overIdx >= 0 && activeIdx < upcomingSongs.length && overIdx < upcomingSongs.length) {
                         const newUpcomingSongs = arrayMove(upcomingSongs, activeIdx, overIdx);
@@ -478,7 +493,18 @@ function Player() {
                     items={queue.slice(currentIndex + 1).map((_, idx) => `queue-item-${currentIndex + 1 + idx}`)}
                     strategy={verticalListSortingStrategy}
                   >
-                    <div className="max-h-80 overflow-y-auto space-y-1 pr-1">
+                    <div 
+                      className="max-h-80 overflow-y-auto space-y-1 pr-1" 
+                      style={{ touchAction: 'pan-y' }}
+                      onTouchStart={(e) => {
+                        // Allow scrolling only if not starting on a draggable item
+                        const target = e.target;
+                        const isDraggable = target.closest('[data-sortable-id]') || target.closest('[role="button"]');
+                        if (isDraggable) {
+                          e.stopPropagation();
+                        }
+                      }}
+                    >
                       {queue.slice(currentIndex + 1).map((song, idx) => {
                         const actualIndex = currentIndex + 1 + idx;
                         return (

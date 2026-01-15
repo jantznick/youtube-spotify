@@ -644,7 +644,6 @@ function Playlist() {
       try {
         const songIds = newPlaylistSongs.map(ps => ps.song.id);
         await playlistsAPI.reorder(id, songIds);
-        showNotification(`"${song.title}" will play next`, 'success');
       } catch (error) {
         // Revert on error
         await loadData();
@@ -653,7 +652,6 @@ function Playlist() {
     } else {
       // No current song or not in this playlist, just add to queue
       playNext(song);
-      showNotification(`"${song.title}" will play next`, 'success');
     }
   };
 

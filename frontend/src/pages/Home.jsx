@@ -14,7 +14,7 @@ function Home() {
   const [notification, setNotification] = useState(null);
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
-  const { setCurrentSong, setQueue } = usePlayerStore();
+  const { setCurrentSong, setQueue, queue } = usePlayerStore();
 
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type });
@@ -51,10 +51,22 @@ function Home() {
 
 
   const handlePlaySong = (song) => {
-    // Set queue to all songs and find the index of the current song
-    const songIndex = songs.findIndex((s) => s.id === song.id);
-    setQueue(songs);
-    setCurrentSong(song, null, songIndex >= 0 ? songIndex : 0);
+    // If there's already a queue, preserve it and just play the song
+    if (queue.length > 0) {
+      const songIndex = queue.findIndex((s) => s.id === song.id);
+      if (songIndex !== -1) {
+        // Song is in queue, play it from there
+        setCurrentSong(song, null, songIndex, true);
+      } else {
+        // Song not in queue, add it and play
+        const newQueue = [...queue, song];
+        setQueue(newQueue);
+        setCurrentSong(song, null, newQueue.length - 1, true);
+      }
+    } else {
+      // No queue, just play the single song (don't create a queue of all songs)
+      setCurrentSong(song, null, 0, false);
+    }
   };
 
   const handleCreatePlaylist = async (name, description) => {

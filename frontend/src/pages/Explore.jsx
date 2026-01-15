@@ -15,7 +15,7 @@ function Explore() {
   const [notification, setNotification] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const navigate = useNavigate();
-  const { setCurrentSong, setQueue, addToQueue } = usePlayerStore();
+  const { setCurrentSong, setQueue, addToQueue, queue } = usePlayerStore();
 
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type });
@@ -38,10 +38,22 @@ function Explore() {
   };
 
   const handlePlaySong = (song) => {
-    // Set queue to all songs and find the index of the current song
-    const songIndex = songs.findIndex((s) => s.id === song.id);
-    setQueue(songs);
-    setCurrentSong(song, null, songIndex >= 0 ? songIndex : 0);
+    // If there's already a queue, preserve it and just play the song
+    if (queue.length > 0) {
+      const songIndex = queue.findIndex((s) => s.id === song.id);
+      if (songIndex !== -1) {
+        // Song is in queue, play it from there
+        setCurrentSong(song, null, songIndex, true);
+      } else {
+        // Song not in queue, add it and play
+        const newQueue = [...queue, song];
+        setQueue(newQueue);
+        setCurrentSong(song, null, newQueue.length - 1, true);
+      }
+    } else {
+      // No queue, just play the single song (don't create a queue of all songs)
+      setCurrentSong(song, null, 0, false);
+    }
   };
 
   const handleImportPlaylist = async (url) => {
@@ -70,17 +82,26 @@ function Explore() {
     <div className="min-h-screen bg-bg-dark">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-bg-dark/80 backdrop-blur-md border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-4">
+          <Link to="/" className="flex items-center gap-2 flex-shrink-0">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
               </svg>
             </div>
-            <span className="text-xl font-bold text-text-primary">MusicDocks</span>
+            <span className="text-lg sm:text-xl font-bold text-text-primary">MusicDocks</span>
           </Link>
-          <div className="flex items-center gap-4">
-            <span className="text-text-secondary">
+          <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition-all font-medium text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2"
+            >
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span className="hidden sm:inline">Import Playlist</span>
+            </button>
+            <span className="text-xs sm:text-sm text-text-secondary hidden sm:inline">
               <button onClick={() => openAuthModal('register')} className="text-primary hover:text-primary-dark">
                 Sign up free
               </button> to create playlists and save your favorites
@@ -90,12 +111,12 @@ function Explore() {
       </header>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-2">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 lg:py-8">
+        <div className="mb-4 sm:mb-6 lg:mb-8">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-text-primary mb-1 sm:mb-2">
             Explore Music
           </h1>
-          <p className="text-sm sm:text-base text-text-muted">
+          <p className="text-xs sm:text-sm lg:text-base text-text-muted">
             {songs.length} {songs.length === 1 ? 'song' : 'songs'} available
           </p>
         </div>
