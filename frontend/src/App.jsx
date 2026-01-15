@@ -8,6 +8,7 @@ import Home from './pages/Home';
 import Playlist from './pages/Playlist';
 import Landing from './pages/Landing';
 import ForgotPassword from './pages/ForgotPassword';
+import NotFound from './pages/NotFound';
 import Player from './components/Player';
 
 // Wrapper component to check for reset token in URL
@@ -73,6 +74,10 @@ function App() {
         <Route
           path="/playlist/:id"
           element={isAuthenticated ? <Playlist /> : <Navigate to="/" />}
+        />
+        <Route
+          path="*"
+          element={<NotFound />}
         />
       </Routes>
       {isAuthenticated && <Player />}
