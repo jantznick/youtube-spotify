@@ -31,10 +31,10 @@ In Railway, go to your service → Variables and add:
 
 ```
 NODE_ENV=production
-FRONTEND_URL=https://your-frontend.onrender.com
-SESSION_SECRET=<generate-a-strong-random-string>
-RESEND_API_KEY=<your-resend-api-key>
-RESEND_FROM_EMAIL=noreply@yourdomain.com
+FRONTEND_URL=https://musicdocks.com
+SESSION_SECRET=lkwjeh9724392yru9ohwf
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=musicdocks@mail.creativeendurancelab.com
 ```
 
 **Important Notes:**
