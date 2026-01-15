@@ -70,16 +70,64 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
     }
   };
 
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   return (
-    <div className="w-64 bg-bg-card border-r border-border flex flex-col h-screen overflow-y-auto">
-      <div className="p-5 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-8 h-8 rounded-md bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-            </svg>
+    <>
+      {/* Mobile menu button */}
+      <button
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 w-10 h-10 bg-bg-card border border-border rounded-lg flex items-center justify-center text-text-primary hover:bg-bg-hover transition-colors"
+        aria-label="Toggle menu"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {isMobileMenuOpen ? (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          ) : (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          )}
+        </svg>
+      </button>
+
+      {/* Mobile overlay */}
+      {isMobileMenuOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <div className={`
+        fixed lg:static
+        top-0 left-0
+        w-64 h-screen
+        bg-bg-card border-r border-border
+        flex flex-col
+        overflow-y-auto
+        z-40
+        transform transition-transform duration-300 ease-in-out
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
+      <div className="p-4 lg:p-5 border-b border-border flex-shrink-0">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-md bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              </svg>
+            </div>
+            <h1 className="text-xl font-bold text-text-primary">MusicDocks</h1>
           </div>
-          <h1 className="text-xl font-bold text-text-primary">MusicDocks</h1>
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="lg:hidden text-text-muted hover:text-text-primary transition-colors"
+            aria-label="Close menu"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-text-primary">My Library</span>
@@ -95,7 +143,7 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
         </div>
       </div>
 
-      <nav className="flex-1 p-3 space-y-1 flex-shrink-0 overflow-y-auto">
+      <nav className="flex-1 p-3 lg:p-3 space-y-1 flex-shrink-0 overflow-y-auto">
         <div className="mb-3">
           <div className="text-xs font-semibold text-text-muted uppercase tracking-wider px-3 mb-2">Playlists</div>
           <div className="space-y-1">
@@ -110,7 +158,10 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
               return (
                 <button
                   key={playlist.id}
-                  onClick={() => navigate(`/playlist/${playlist.id}`)}
+                  onClick={() => {
+                    navigate(`/playlist/${playlist.id}`);
+                    setIsMobileMenuOpen(false);
+                  }}
                   className="w-full text-left px-3 py-2 rounded-md transition-all flex items-center gap-2.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary group"
                 >
                   {isYouTubePlaylist ? (
@@ -165,7 +216,7 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
         </div>
       </nav>
 
-      <div className="p-3 border-t border-border flex-shrink-0 mt-auto space-y-3">
+      <div className="p-3 lg:p-3 border-t border-border flex-shrink-0 mt-auto space-y-3">
         <div className="flex gap-2">
           <button
             onClick={() => setShowCreatePlaylistModal(true)}
@@ -220,9 +271,9 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
 
       {/* Import Playlist Modal */}
       {showImportPlaylistModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-bg-card border border-border p-6 rounded-2xl w-full max-w-md shadow-2xl">
-            <h2 className="text-2xl font-bold mb-4 text-text-primary">Import Playlist</h2>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
+            <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">Import Playlist</h2>
             <form onSubmit={handleImportPlaylist} className="space-y-4">
               {importError && (
                 <div className="bg-red-500/20 text-red-400 p-3 rounded">
@@ -326,9 +377,9 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
 
       {/* Add Credential Modal */}
       {showAddCredentialModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-bg-card border border-border p-6 rounded-2xl w-full max-w-md shadow-2xl">
-            <h2 className="text-2xl font-bold mb-4 text-text-primary">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
+            <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">
               {!user?.email ? 'Add Email Address' : 'Add Username'}
             </h2>
             <p className="text-text-secondary text-sm mb-4">
@@ -399,9 +450,9 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
 
       {/* Create Playlist Modal */}
       {showCreatePlaylistModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-bg-card border border-border p-6 rounded-2xl w-full max-w-md shadow-2xl">
-            <h2 className="text-2xl font-bold mb-4 text-text-primary">Create Playlist</h2>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
+            <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">Create Playlist</h2>
             <form onSubmit={handleCreatePlaylist} className="space-y-4">
               <div>
                 <label className="block mb-2 text-sm font-medium text-text-secondary">Name</label>
@@ -456,7 +507,8 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
           onClose={() => setNotification(null)}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

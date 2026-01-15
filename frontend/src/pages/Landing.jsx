@@ -5,25 +5,25 @@ function Landing() {
     <div className="min-h-screen bg-gradient-to-b from-bg-dark via-bg-dark to-bg-card">
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-bg-dark/80 backdrop-blur-md border-b border-border">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
               </svg>
             </div>
-            <span className="text-xl font-bold text-text-primary">MusicDocks</span>
+            <span className="text-lg sm:text-xl font-bold text-text-primary">MusicDocks</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <Link
               to="/login"
-              className="text-text-secondary hover:text-text-primary transition-colors"
+              className="text-sm sm:text-base text-text-secondary hover:text-text-primary transition-colors px-2 sm:px-0"
             >
               Sign In
             </Link>
             <Link
               to="/register"
-              className="px-6 py-2 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition-all font-medium"
+              className="px-4 sm:px-6 py-1.5 sm:py-2 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition-all font-medium text-sm sm:text-base"
             >
               Get Started
             </Link>
@@ -32,24 +32,24 @@ function Landing() {
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-40 pb-32 px-6">
+      <section className="pt-24 sm:pt-32 md:pt-40 pb-16 sm:pb-24 md:pb-32 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto text-center">
-          <h1 className="text-5xl md:text-6xl font-bold text-text-primary mb-8 bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-text-primary mb-6 sm:mb-8 bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
             Your Music, Your Way
           </h1>
-          <p className="text-xl md:text-2xl text-text-secondary mb-12 max-w-3xl mx-auto leading-relaxed">
+          <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-text-secondary mb-8 sm:mb-10 md:mb-12 max-w-3xl mx-auto leading-relaxed px-2">
             Build playlists from YouTube, import from Spotify, and create your perfect music collection. All powered by YouTube's vast library.
           </p>
-          <div className="flex items-center justify-center gap-6 flex-wrap">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
             <Link
               to="/register"
-              className="px-8 py-4 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl hover:shadow-lg hover:shadow-primary/30 transition-all font-medium text-lg"
+              className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl hover:shadow-lg hover:shadow-primary/30 transition-all font-medium text-base sm:text-lg"
             >
               Start Listening Free
             </Link>
             <Link
               to="/login"
-              className="px-8 py-4 bg-bg-card border border-border text-text-primary rounded-xl hover:bg-bg-hover transition-all font-medium text-lg"
+              className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 bg-bg-card border border-border text-text-primary rounded-xl hover:bg-bg-hover transition-all font-medium text-base sm:text-lg"
             >
               Sign In
             </Link>

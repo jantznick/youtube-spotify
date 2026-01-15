@@ -86,16 +86,16 @@ function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-bg-dark via-bg-dark to-bg-card flex items-center justify-center p-6">
+    <div className="min-h-screen bg-gradient-to-b from-bg-dark via-bg-dark to-bg-card flex items-center justify-center p-4 sm:p-6">
       <div className="w-full max-w-md">
-        <div className="bg-bg-card border border-border rounded-2xl p-8 shadow-2xl">
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-bg-card border border-border rounded-2xl p-6 sm:p-8 shadow-2xl">
+          <div className="text-center mb-6 sm:mb-8">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 sm:w-8 sm:h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
               </svg>
             </div>
-            <h1 className="text-3xl font-bold text-text-primary mb-2">
+            <h1 className="text-2xl sm:text-3xl font-bold text-text-primary mb-2">
               {step === 'request' ? 'Forgot Password?' : 'Reset Password'}
             </h1>
             <p className="text-text-secondary">

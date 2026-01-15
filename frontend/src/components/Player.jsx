@@ -101,20 +101,20 @@ function Player() {
     <div
       className={`fixed bg-bg-card border border-border rounded-xl shadow-2xl transition-all duration-300 z-50 overflow-hidden ${
         isMinimized
-          ? 'bottom-4 right-4 w-56'
-          : `top-4 right-4 w-96 ${showToast ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`
+          ? 'bottom-4 right-4 w-56 sm:w-64'
+          : `top-4 right-4 left-4 sm:left-auto w-auto sm:w-96 max-w-[calc(100vw-2rem)] sm:max-w-none ${showToast ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`
       }`}
     >
-      <div className={isMinimized ? 'relative' : 'p-4'}>
+      <div className={isMinimized ? 'relative' : 'p-3 sm:p-4'}>
         {!isMinimized && (
-          <div className="flex items-start justify-between mb-3">
+          <div className="flex items-start justify-between mb-3 gap-2">
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-text-primary truncate text-sm">{currentSong.title}</div>
-              <div className="text-xs text-text-muted truncate">
+              <div className="font-semibold text-text-primary truncate text-sm sm:text-base">{currentSong.title}</div>
+              <div className="text-xs sm:text-sm text-text-muted truncate">
                 {currentSong.artist || 'Unknown Artist'}
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <button
                 onClick={() => setIsMinimized(true)}
                 className="text-text-muted hover:text-text-primary transition-colors"
@@ -143,13 +143,14 @@ function Player() {
         )}
 
         {/* Single YouTube component - always rendered, just resized */}
-        <div className={isMinimized ? 'w-full' : 'mb-3 rounded-lg overflow-hidden'}>
+        <div className={isMinimized ? 'w-full' : 'mb-3 rounded-lg overflow-hidden aspect-video'}>
           <YouTube
             videoId={currentSong.youtubeId}
             opts={playerOpts}
             onReady={handleReady}
             onStateChange={handleStateChange}
             key={currentSong.youtubeId}
+            className="w-full h-full"
           />
         </div>
 
@@ -192,38 +193,38 @@ function Player() {
             <button
               onClick={previousSong}
               disabled={currentIndex === 0}
-              className="w-8 h-8 rounded-md bg-bg-hover text-text-secondary hover:text-primary hover:bg-primary/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center flex-shrink-0"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-md bg-bg-hover text-text-secondary hover:text-primary hover:bg-primary/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center flex-shrink-0"
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M8.445 14.832A1 1 0 0010 14v-2.798l5.445 3.63A1 1 0 0017 14V6a1 1 0 00-1.555-.832L10 8.798V6a1 1 0 00-1.555-.832l-6 4a1 1 0 000 1.664l6 4z" />
               </svg>
             </button>
             <button
               onClick={togglePlay}
-              className="flex-1 h-9 bg-primary text-white rounded-md flex items-center justify-center hover:bg-primary-dark transition-all font-medium text-sm"
+              className="flex-1 h-8 sm:h-9 bg-primary text-white rounded-md flex items-center justify-center hover:bg-primary-dark transition-all font-medium text-xs sm:text-sm"
             >
               {isPlaying ? (
                 <>
-                  <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-1.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
-                  Pause
+                  <span className="hidden sm:inline">Pause</span>
                 </>
               ) : (
                 <>
-                  <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-1.5" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                   </svg>
-                  Play
+                  <span className="hidden sm:inline">Play</span>
                 </>
               )}
             </button>
             <button
               onClick={nextSong}
               disabled={currentIndex >= queue.length - 1}
-              className="w-8 h-8 rounded-md bg-bg-hover text-text-secondary hover:text-primary hover:bg-primary/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center flex-shrink-0"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-md bg-bg-hover text-text-secondary hover:text-primary hover:bg-primary/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center flex-shrink-0"
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0011 6v2.798l-5.445-3.63z" />
               </svg>
             </button>
@@ -231,7 +232,7 @@ function Player() {
         )}
 
         {!isMinimized && (
-          <div className="text-xs text-text-muted text-center">
+          <div className="text-xs sm:text-sm text-text-muted text-center">
             {currentIndex + 1} of {queue.length}
           </div>
         )}

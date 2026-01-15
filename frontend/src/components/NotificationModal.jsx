@@ -48,8 +48,8 @@ function NotificationModal({ message, type = 'info', onClose, duration = 3000 })
   }[type] || null;
 
   return (
-    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-slide-down">
-      <div className={`${bgColor} ${textColor} border rounded-xl px-6 py-4 shadow-2xl flex items-center gap-3 min-w-[300px] max-w-md`}>
+    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-slide-down w-full max-w-[calc(100vw-2rem)] px-4 sm:px-0">
+      <div className={`${bgColor} ${textColor} border rounded-xl px-4 sm:px-6 py-3 sm:py-4 shadow-2xl flex items-center gap-2 sm:gap-3 max-w-md mx-auto`}>
         {icon && <div className="flex-shrink-0">{icon}</div>}
         <div className="flex-1">{message}</div>
         <button

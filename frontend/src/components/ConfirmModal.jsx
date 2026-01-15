@@ -12,8 +12,8 @@ function ConfirmModal({ message, onConfirm, onCancel, confirmText = 'Confirm', c
   }[type] || 'bg-yellow-500 hover:bg-yellow-600';
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-bg-card border border-border p-6 rounded-2xl w-full max-w-md shadow-2xl">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
         <div className={`${bgColor} border rounded-lg p-4 mb-4`}>
           <p className="text-text-primary">{message}</p>
         </div>

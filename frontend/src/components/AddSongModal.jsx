@@ -104,9 +104,9 @@ function AddSongModal({ onClose, onAdd, onImportPlaylist }) {
 
   if (showPlaylistPrompt) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-bg-card border border-border p-6 rounded-2xl w-full max-w-md shadow-2xl">
-          <h2 className="text-2xl font-bold mb-4 text-text-primary">This URL contains a playlist</h2>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
+          <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">This URL contains a playlist</h2>
           <p className="text-text-muted mb-4">
             Would you like to import the entire playlist or just add this single song?
           </p>
@@ -161,9 +161,9 @@ function AddSongModal({ onClose, onAdd, onImportPlaylist }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-bg-card border border-border p-6 rounded-2xl w-full max-w-md shadow-2xl">
-        <h2 className="text-2xl font-bold mb-4 text-text-primary">Add Song</h2>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
+        <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">Add Song</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="bg-red-500/20 text-red-400 p-3 rounded">
