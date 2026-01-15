@@ -43,6 +43,10 @@ model Playlist {
   id          String   @id @default(uuid())
   name        String
   description String?
+  sourceUrl   String?  // URL of the original YouTube or Spotify playlist
+  sourceType  String?  // 'youtube', 'spotify', or null for manual playlists
+  autoUpdate  Boolean  @default(false) // Whether to periodically refetch from source
+  lastSyncedAt DateTime? // When the playlist was last refreshed from source
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

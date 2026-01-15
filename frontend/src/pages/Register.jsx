@@ -195,7 +195,7 @@ function Register() {
             <div className="bg-blue-500/20 border border-blue-500/30 rounded-lg p-3 text-sm text-blue-400 mb-4">
               {usernameOrEmail.includes('@')
                 ? `We've sent a magic link to ${usernameOrEmail}. Check your email or enter the 6-digit code below.`
-                : 'Check the server console for your magic link and 6-digit code.'}
+                : 'We\'ve sent a magic link to your email address. Check your email or enter the 6-digit code below.'}
             </div>
             <div>
               <label className="block mb-2 text-sm font-medium">

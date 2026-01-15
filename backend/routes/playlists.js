@@ -33,6 +33,44 @@ const extractPlaylistId = (url) => {
   return null;
 };
 
+// Detect if URL is YouTube or Spotify
+const detectSourceType = (url) => {
+  if (!url) return null;
+  
+  const normalizedUrl = url.toLowerCase();
+  if (normalizedUrl.includes('youtube.com') || normalizedUrl.includes('youtu.be')) {
+    return 'youtube';
+  }
+  if (normalizedUrl.includes('spotify.com')) {
+    return 'spotify';
+  }
+  return null;
+};
+
+// Validate URL format
+const validateSourceUrl = (url, sourceType) => {
+  if (!url) return { valid: true }; // Empty URL is valid (removing source)
+  
+  const normalizedUrl = url.trim();
+  if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+    return { valid: false, error: 'URL must start with http:// or https://' };
+  }
+  
+  if (sourceType === 'youtube') {
+    // Check if it's a valid YouTube URL
+    if (!normalizedUrl.includes('youtube.com') && !normalizedUrl.includes('youtu.be')) {
+      return { valid: false, error: 'Invalid YouTube URL' };
+    }
+  } else if (sourceType === 'spotify') {
+    // Check if it's a valid Spotify URL
+    if (!normalizedUrl.includes('spotify.com')) {
+      return { valid: false, error: 'Invalid Spotify URL' };
+    }
+  }
+  
+  return { valid: true };
+};
+
 // Scrape Spotify playlist using Puppeteer
 async function scrapeSpotifyPlaylistWithPuppeteer(playlistUrl) {
   let browser;
@@ -391,7 +429,7 @@ router.put('/:id', async (req, res) => {
   try {
     const userId = req.session.userId;
     const { id } = req.params;
-    const { name, description } = req.body;
+    const { name, description, autoUpdate, sourceUrl } = req.body;
 
     const playlist = await prisma.playlist.findFirst({
       where: {
@@ -404,11 +442,64 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Playlist not found' });
     }
 
+    // Build update data object
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    
+    // Handle sourceUrl update
+    if (sourceUrl !== undefined) {
+      if (sourceUrl === null || sourceUrl === '') {
+        // Removing source URL
+        updateData.sourceUrl = null;
+        updateData.sourceType = null;
+        // Disable autoUpdate if source is removed
+        updateData.autoUpdate = false;
+      } else {
+        // Validate and set source URL
+        const detectedType = detectSourceType(sourceUrl);
+        if (!detectedType) {
+          return res.status(400).json({ error: 'Invalid URL. Must be a YouTube or Spotify playlist URL.' });
+        }
+        
+        const validation = validateSourceUrl(sourceUrl, detectedType);
+        if (!validation.valid) {
+          return res.status(400).json({ error: validation.error });
+        }
+        
+        // Normalize URL
+        let normalizedUrl = sourceUrl.trim();
+        if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+          normalizedUrl = 'https://' + normalizedUrl;
+        }
+        
+        updateData.sourceUrl = normalizedUrl;
+        updateData.sourceType = detectedType;
+      }
+    }
+    
+    // Only allow autoUpdate to be set if playlist has a source (YouTube or Spotify)
+    if (autoUpdate !== undefined) {
+      if (autoUpdate && !updateData.sourceType && !playlist.sourceType) {
+        return res.status(400).json({ error: 'Auto-update requires a source URL' });
+      }
+      if (updateData.sourceType || playlist.sourceType) {
+        updateData.autoUpdate = Boolean(autoUpdate);
+      }
+    }
+
     const updatedPlaylist = await prisma.playlist.update({
       where: { id },
-      data: {
-        ...(name && { name }),
-        ...(description !== undefined && { description }),
+      data: updateData,
+      include: {
+        playlistSongs: {
+          include: {
+            song: true,
+          },
+          orderBy: {
+            position: 'asc',
+          },
+        },
       },
     });
 
@@ -671,6 +762,63 @@ router.post('/import-youtube', async (req, res) => {
   }
 });
 
+// Refresh playlist from source URL
+router.post('/:id/refresh', async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const { id } = req.params;
+
+    // Get playlist
+    const playlist = await prisma.playlist.findFirst({
+      where: {
+        id,
+        userId,
+      },
+    });
+
+    if (!playlist) {
+      return res.status(404).json({ error: 'Playlist not found' });
+    }
+
+    if (!playlist.sourceUrl || !playlist.sourceType) {
+      return res.status(400).json({ error: 'Playlist does not have a source URL to refresh from' });
+    }
+
+    // Start refresh process based on source type
+    if (playlist.sourceType === 'youtube') {
+      const playlistId = extractPlaylistId(playlist.sourceUrl);
+      if (!playlistId) {
+        return res.status(400).json({ error: 'Invalid YouTube playlist URL' });
+      }
+      
+      // Start async refresh (don't await)
+      refreshYouTubePlaylistAsync(id, userId, playlistId, playlist.sourceUrl).catch((error) => {
+        console.error('Background playlist refresh error:', error);
+      });
+    } else if (playlist.sourceType === 'spotify') {
+      // Start async refresh (don't await)
+      refreshSpotifyPlaylistAsync(id, userId, playlist.sourceUrl).catch((error) => {
+        console.error('Background playlist refresh error:', error);
+      });
+    } else {
+      return res.status(400).json({ error: 'Unsupported source type' });
+    }
+
+    // Update the playlist's lastSyncedAt timestamp
+    await prisma.playlist.update({
+      where: { id },
+      data: { lastSyncedAt: new Date() },
+    });
+
+    res.status(202).json({
+      message: 'Playlist refresh started. Songs will be updated in the background.',
+    });
+  } catch (error) {
+    console.error('Refresh playlist error:', error);
+    res.status(500).json({ error: 'Failed to start playlist refresh' });
+  }
+});
+
 // Helper function to get video metadata
 async function getVideoMetadata(videoId) {
   // Try oEmbed API first
@@ -812,17 +960,29 @@ async function importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl)
     }
     
     // Get playlist title if available
-    let finalPlaylistName = playlistName || playlistData.title || 'Imported Playlist';
-    // Append "- YouTube" if not already present
-    if (!finalPlaylistName.endsWith('- YouTube')) {
+    let finalPlaylistName = (playlistName && playlistName.trim()) || playlistData.title || 'Imported Playlist';
+    finalPlaylistName = finalPlaylistName.trim();
+    // Append "- YouTube" if not already present (case-insensitive check)
+    const lowerName = finalPlaylistName.toLowerCase();
+    if (!lowerName.endsWith('- youtube') && !lowerName.endsWith(' - youtube')) {
       finalPlaylistName = `${finalPlaylistName} - YouTube`;
     }
     
-    // Create playlist
+    // Normalize the YouTube URL for storage
+    let normalizedYoutubeUrl = youtubeUrl;
+    if (!normalizedYoutubeUrl.startsWith('http://') && !normalizedYoutubeUrl.startsWith('https://')) {
+      normalizedYoutubeUrl = 'https://' + normalizedYoutubeUrl;
+    }
+    
+    // Create playlist with source URL
     const playlist = await prisma.playlist.create({
       data: {
         name: finalPlaylistName,
         description: `Imported from YouTube playlist`,
+        sourceUrl: normalizedYoutubeUrl,
+        sourceType: 'youtube',
+        autoUpdate: false,
+        lastSyncedAt: new Date(),
         userId,
       },
     });
@@ -887,6 +1047,225 @@ async function importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl)
   }
 }
 
+// Async function to refresh YouTube playlist (updates existing playlist)
+async function refreshYouTubePlaylistAsync(playlistId, userId, youtubePlaylistId, youtubeUrl) {
+  try {
+    console.log(`Refreshing YouTube playlist: ${playlistId}`);
+    
+    // Extract video ID from original URL as fallback
+    const videoIdMatch = youtubeUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    const fallbackVideoId = videoIdMatch ? videoIdMatch[1] : null;
+    
+    // Check if this is a Mix/Radio playlist
+    const isMixPlaylist = youtubePlaylistId.startsWith('RD');
+    
+    let playlistData;
+    
+    // For Mix playlists, use the original video URL directly
+    if (isMixPlaylist && youtubeUrl && (youtubeUrl.includes('watch?v=') || youtubeUrl.includes('youtu.be/'))) {
+      console.log('Detected Mix/Radio playlist, using original video URL');
+      try {
+        let normalizedVideoUrl = youtubeUrl;
+        if (!normalizedVideoUrl.startsWith('http://') && !normalizedVideoUrl.startsWith('https://')) {
+          normalizedVideoUrl = 'https://' + normalizedVideoUrl;
+        }
+        playlistData = await scrapePlaylistWithPuppeteer(normalizedVideoUrl);
+      } catch (videoError) {
+        console.error('Error scraping Mix playlist from video URL:', videoError);
+        if (fallbackVideoId) {
+          playlistData = {
+            videoIds: [fallbackVideoId],
+            title: null,
+          };
+        } else {
+          throw new Error('Could not extract playlist or video information');
+        }
+      }
+    } else {
+      // For regular playlists, try the playlist URL first
+      let playlistUrl = `https://www.youtube.com/playlist?list=${youtubePlaylistId}`;
+      try {
+        playlistData = await scrapePlaylistWithPuppeteer(playlistUrl);
+      } catch (error) {
+        console.error('Error scraping playlist URL, trying with original URL:', error);
+        if (youtubeUrl && (youtubeUrl.includes('watch?v=') || youtubeUrl.includes('youtu.be/'))) {
+          try {
+            let normalizedVideoUrl = youtubeUrl;
+            if (!normalizedVideoUrl.startsWith('http://') && !normalizedVideoUrl.startsWith('https://')) {
+              normalizedVideoUrl = 'https://' + normalizedVideoUrl;
+            }
+            playlistData = await scrapePlaylistWithPuppeteer(normalizedVideoUrl);
+          } catch (videoError) {
+            console.error('Error scraping video URL:', videoError);
+            if (fallbackVideoId) {
+              playlistData = {
+                videoIds: [fallbackVideoId],
+                title: null,
+              };
+            } else {
+              throw new Error('Could not extract playlist or video information');
+            }
+          }
+        } else if (fallbackVideoId) {
+          playlistData = {
+            videoIds: [fallbackVideoId],
+            title: null,
+          };
+        } else {
+          throw new Error('Could not extract playlist or video information');
+        }
+      }
+    }
+    
+    const videoIds = playlistData.videoIds || [];
+    if (videoIds.length === 0) {
+      console.error('No videos found in playlist');
+      return;
+    }
+    
+    console.log(`Starting refresh of ${videoIds.length} songs for playlist: ${playlistId}`);
+
+    // Import each video as a song and add to playlist
+    for (let i = 0; i < videoIds.length; i++) {
+      const videoId = videoIds[i];
+      try {
+        // Check if song already exists
+        let song = await prisma.song.findFirst({
+          where: {
+            userId,
+            youtubeId: videoId,
+          },
+        });
+
+        // Create song if it doesn't exist
+        if (!song) {
+          const metadata = await getVideoMetadata(videoId);
+          
+          song = await prisma.song.create({
+            data: {
+              title: metadata?.title || 'Untitled',
+              artist: metadata?.artist || null,
+              youtubeId: videoId,
+              thumbnailUrl: metadata?.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+              duration: metadata?.duration || null,
+              userId,
+            },
+          });
+        }
+
+        // Add song to playlist (check if already exists)
+        const existing = await prisma.playlistSong.findUnique({
+          where: {
+            playlistId_songId: {
+              playlistId: playlistId,
+              songId: song.id,
+            },
+          },
+        });
+
+        if (!existing) {
+          await prisma.playlistSong.create({
+            data: {
+              playlistId: playlistId,
+              songId: song.id,
+              position: i,
+            },
+          });
+        }
+      } catch (error) {
+        console.error(`Error importing video ${videoId}:`, error);
+      }
+    }
+
+    console.log(`Completed refresh of playlist: ${playlistId}`);
+  } catch (error) {
+    console.error('Background playlist refresh error:', error);
+  }
+}
+
+// Async function to refresh Spotify playlist (updates existing playlist)
+async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
+  try {
+    console.log(`Refreshing Spotify playlist: ${playlistId}`);
+    
+    // Scrape Spotify playlist
+    const spotifyData = await scrapeSpotifyPlaylistWithPuppeteer(spotifyUrl);
+    
+    if (!spotifyData.songs || spotifyData.songs.length === 0) {
+      console.error('No songs found in Spotify playlist');
+      return;
+    }
+    
+    console.log(`Starting refresh of ${spotifyData.songs.length} songs for playlist: ${playlistId}`);
+
+    // For each song, search YouTube and add to playlist
+    for (let i = 0; i < spotifyData.songs.length; i++) {
+      const spotifySong = spotifyData.songs[i];
+      try {
+        // Search YouTube for the song
+        const videoId = await searchYouTubeForSong(spotifySong.title, spotifySong.artists);
+        
+        if (!videoId) {
+          console.warn(`Skipping "${spotifySong.title}" by ${spotifySong.artists} - no YouTube video found`);
+          continue;
+        }
+        
+        // Check if song already exists
+        let song = await prisma.song.findFirst({
+          where: {
+            userId,
+            youtubeId: videoId,
+          },
+        });
+
+        // Create song if it doesn't exist
+        if (!song) {
+          const metadata = await getVideoMetadata(videoId);
+          
+          song = await prisma.song.create({
+            data: {
+              title: metadata?.title || spotifySong.title,
+              artist: metadata?.artist || spotifySong.artists,
+              youtubeId: videoId,
+              thumbnailUrl: metadata?.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+              duration: metadata?.duration || null,
+              userId,
+            },
+          });
+        }
+
+        // Add song to playlist (check if already exists)
+        const existing = await prisma.playlistSong.findUnique({
+          where: {
+            playlistId_songId: {
+              playlistId: playlistId,
+              songId: song.id,
+            },
+          },
+        });
+
+        if (!existing) {
+          await prisma.playlistSong.create({
+            data: {
+              playlistId: playlistId,
+              songId: song.id,
+              position: i,
+            },
+          });
+        }
+        
+        console.log(`Refreshed ${i + 1}/${spotifyData.songs.length}: ${spotifySong.title}`);
+      } catch (error) {
+        console.error(`Error importing song "${spotifySong.title}":`, error);
+      }
+    }
+
+    console.log(`Completed refresh of Spotify playlist: ${playlistId}`);
+  } catch (error) {
+    console.error('Background playlist refresh error:', error);
+  }
+}
+
 // Async function to import Spotify playlist in background
 async function importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName) {
   try {
@@ -901,17 +1280,29 @@ async function importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName) {
     }
     
     // Get playlist title
-    let finalPlaylistName = playlistName || spotifyData.title || 'Imported Spotify Playlist';
-    // Append "- Spotify" if not already present
-    if (!finalPlaylistName.endsWith('- Spotify')) {
+    let finalPlaylistName = (playlistName && playlistName.trim()) || spotifyData.title || 'Imported Spotify Playlist';
+    finalPlaylistName = finalPlaylistName.trim();
+    // Append "- Spotify" if not already present (case-insensitive check)
+    const lowerName = finalPlaylistName.toLowerCase();
+    if (!lowerName.endsWith('- spotify') && !lowerName.endsWith(' - spotify')) {
       finalPlaylistName = `${finalPlaylistName} - Spotify`;
     }
     
-    // Create playlist
+    // Normalize the Spotify URL for storage
+    let normalizedSpotifyUrl = spotifyUrl;
+    if (!normalizedSpotifyUrl.startsWith('http://') && !normalizedSpotifyUrl.startsWith('https://')) {
+      normalizedSpotifyUrl = 'https://' + normalizedSpotifyUrl;
+    }
+    
+    // Create playlist with source URL
     const playlist = await prisma.playlist.create({
       data: {
         name: finalPlaylistName,
         description: `Imported from Spotify playlist`,
+        sourceUrl: normalizedSpotifyUrl,
+        sourceType: 'spotify',
+        autoUpdate: false,
+        lastSyncedAt: new Date(),
         userId,
       },
     });

@@ -142,6 +142,10 @@ export const playlistsAPI = {
       method: 'POST',
       body: JSON.stringify({ spotifyUrl, playlistName }),
     }),
+  refresh: (playlistId) =>
+    request(`/playlists/${playlistId}/refresh`, {
+      method: 'POST',
+    }),
 };
 
 export const userAPI = {

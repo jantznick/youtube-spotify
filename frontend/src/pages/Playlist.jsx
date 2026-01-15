@@ -7,6 +7,7 @@ import Sidebar from '../components/Sidebar';
 import AddSongModal from '../components/AddSongModal';
 import NotificationModal from '../components/NotificationModal';
 import ConfirmModal from '../components/ConfirmModal';
+import PlaylistSettingsModal from '../components/PlaylistSettingsModal';
 
 function Playlist() {
   const { id } = useParams();
@@ -17,6 +18,7 @@ function Playlist() {
   const [loading, setLoading] = useState(true);
   const [showAddSongModal, setShowAddSongModal] = useState(false);
   const [showAddSongToLibraryModal, setShowAddSongToLibraryModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [notification, setNotification] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
   const { currentSong, setCurrentSong, setQueue, currentPlaylist, isPlaying, togglePlay } = usePlayerStore();
@@ -64,6 +66,46 @@ function Playlist() {
         setCurrentSong(playlistSongs[0], playlist, 0);
       }
     }
+  };
+
+  const handleRefresh = async () => {
+    if (!playlist.sourceUrl) {
+      showNotification('This playlist does not have a source URL to refresh from', 'error');
+      return;
+    }
+
+    try {
+      await playlistsAPI.refresh(playlist.id);
+      showNotification('Playlist refresh started! Songs will be updated in the background.', 'success');
+      // Reload data after a short delay to show updated timestamp
+      setTimeout(() => {
+        loadData();
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to refresh playlist:', error);
+      showNotification(error.response?.data?.error || 'Failed to refresh playlist', 'error');
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Never';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
   };
 
   const handleAddSong = async (songId) => {
@@ -153,9 +195,16 @@ function Playlist() {
                 {playlist.description && (
                   <p className="text-sm sm:text-base text-text-muted mb-3 sm:mb-4 break-words">{playlist.description}</p>
                 )}
-                <p className="text-sm sm:text-base text-text-muted">
-                  {playlist.playlistSongs?.length || 0} {playlist.playlistSongs?.length === 1 ? 'song' : 'songs'}
-                </p>
+                <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-2">
+                  <p className="text-sm sm:text-base text-text-muted">
+                    {playlist.playlistSongs?.length || 0} {playlist.playlistSongs?.length === 1 ? 'song' : 'songs'}
+                  </p>
+                  {playlist.lastSyncedAt && (
+                    <p className="text-xs sm:text-sm text-text-secondary">
+                      Last synced {formatDate(playlist.lastSyncedAt)}
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                 <button
@@ -178,16 +227,41 @@ function Playlist() {
                     </>
                   )}
                 </button>
+                {playlist.sourceUrl && (
+                  <button
+                    onClick={handleRefresh}
+                    className="w-full sm:w-auto px-4 sm:px-6 py-3 sm:py-4 bg-bg-hover border border-border text-text-primary rounded-xl hover:bg-bg-card transition-all font-medium flex items-center justify-center gap-2 sm:gap-3 text-sm sm:text-base"
+                    title="Refresh from source"
+                  >
+                    <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span className="hidden sm:inline">Refresh</span>
+                  </button>
+                )}
                 <button
-                  onClick={() => setShowAddSongModal(true)}
-                  className="w-full sm:w-auto px-4 sm:px-6 py-3 sm:py-4 bg-bg-card border border-border text-text-primary rounded-xl hover:bg-bg-hover transition-all font-medium flex items-center justify-center gap-2 text-sm sm:text-base"
+                  onClick={() => setShowSettingsModal(true)}
+                  className="w-full sm:w-auto px-4 sm:px-6 py-3 sm:py-4 bg-bg-hover border border-border text-text-primary rounded-xl hover:bg-bg-card transition-all font-medium flex items-center justify-center gap-2 sm:gap-3 text-sm sm:text-base"
+                  title="Playlist Settings"
                 >
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  <span className="hidden sm:inline">Add Songs</span>
-                  <span className="sm:hidden">Add</span>
+                  <span className="hidden sm:inline">Settings</span>
                 </button>
+                {!playlist.sourceUrl && (
+                  <button
+                    onClick={() => setShowAddSongModal(true)}
+                    className="w-full sm:w-auto px-4 sm:px-6 py-3 sm:py-4 bg-bg-card border border-border text-text-primary rounded-xl hover:bg-bg-hover transition-all font-medium flex items-center justify-center gap-2 text-sm sm:text-base"
+                  >
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span className="hidden sm:inline">Add Songs</span>
+                    <span className="sm:hidden">Add</span>
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setConfirmModal({
@@ -275,13 +349,22 @@ function Playlist() {
                 </svg>
               </div>
               <p className="text-xl font-medium text-text-primary mb-2">No songs in this playlist</p>
-              <p className="text-text-muted mb-4">Add songs to get started!</p>
-              <button
-                onClick={() => setShowAddSongModal(true)}
-                className="px-6 py-3 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl hover:shadow-lg hover:shadow-primary/30 transition-all font-medium"
-              >
-                Add Songs
-              </button>
+              {!playlist.sourceUrl ? (
+                <>
+                  <p className="text-text-muted mb-4">Add songs to get started!</p>
+                  <button
+                    onClick={() => setShowAddSongModal(true)}
+                    className="px-6 py-3 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl hover:shadow-lg hover:shadow-primary/30 transition-all font-medium"
+                  >
+                    Add Songs
+                  </button>
+                </>
+              ) : (
+                <p className="text-text-muted mb-4">
+                  This playlist is synced from {playlist.sourceType === 'youtube' ? 'YouTube' : 'Spotify'}. 
+                  Use the Refresh button to update songs from the source.
+                </p>
+              )}
             </div>
           )}
 
@@ -382,6 +465,16 @@ function Playlist() {
               showNotification(error.message || 'Failed to start playlist import', 'error');
               throw error;
             }
+          }}
+        />
+      )}
+      {showSettingsModal && playlist && (
+        <PlaylistSettingsModal
+          playlist={playlist}
+          onClose={() => setShowSettingsModal(false)}
+          onUpdate={(updatedPlaylist) => {
+            setPlaylist(updatedPlaylist);
+            setShowSettingsModal(false);
           }}
         />
       )}
