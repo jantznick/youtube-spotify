@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-do
 import useAuthStore from '../store/authStore';
 import { authAPI } from '../api/api';
 
-function Login() {
+function Login({ onClose }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
@@ -26,6 +26,9 @@ function Login() {
       authAPI.loginWithMagicToken(token)
         .then((data) => {
           setUser(data.user);
+          if (onClose) {
+            onClose();
+          }
           navigate('/home');
         })
         .catch((err) => {
@@ -51,6 +54,9 @@ function Login() {
     try {
       const data = await authAPI.login(usernameOrEmail, password);
       setUser(data.user);
+      if (onClose) {
+        onClose();
+      }
       navigate('/home');
     } catch (err) {
       setError(err.message || 'Failed to login');
@@ -96,6 +102,9 @@ function Login() {
       
       const data = await authAPI.loginWithMagicToken(code);
       setUser(data.user);
+      if (onClose) {
+        onClose();
+      }
       navigate('/home');
     } catch (err) {
       setError(err.message || 'Failed to login with magic token');
@@ -105,9 +114,9 @@ function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-dark p-4">
-      <div className="w-full max-w-md p-6 sm:p-8 bg-bg-card rounded-2xl border border-border shadow-2xl">
-        <div className="text-center mb-8">
+    <div>
+      <div className="w-full max-w-md p-0">
+        <div className="text-center mb-4">
           <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
             <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
@@ -241,13 +250,6 @@ function Login() {
             </button>
           </form>
         )}
-
-        <p className="mt-6 text-center text-sm text-text-muted">
-          Don't have an account?{' '}
-          <Link to="/register" className="text-primary hover:text-primary-light font-medium transition-colors">
-            Register
-          </Link>
-        </p>
       </div>
     </div>
   );

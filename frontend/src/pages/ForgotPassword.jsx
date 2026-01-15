@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { authAPI } from '../api/api';
+import { useAuthModal } from '../contexts/AuthModalContext';
 
 function ForgotPassword() {
+  const { openAuthModal } = useAuthModal();
   const [searchParams] = useSearchParams();
   const [step, setStep] = useState('request'); // 'request' or 'reset'
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
@@ -182,12 +184,15 @@ function ForgotPassword() {
           )}
 
           <div className="mt-6 text-center">
-            <Link
-              to="/login"
+            <button
+              onClick={() => {
+                navigate('/');
+                openAuthModal('login');
+              }}
               className="text-primary hover:text-primary-dark transition-colors text-sm"
             >
               Back to Login
-            </Link>
+            </button>
           </div>
         </div>
       </div>

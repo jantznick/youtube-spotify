@@ -1,9 +1,7 @@
-import { useEffect } from 'react';
-import { Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Routes, Route, Navigate, useSearchParams, useLocation } from 'react-router-dom';
 import useAuthStore from './store/authStore';
 import { authAPI } from './api/api';
-import Login from './pages/Login';
-import Register from './pages/Register';
 import Home from './pages/Home';
 import Playlist from './pages/Playlist';
 import Queue from './pages/Queue';
@@ -12,6 +10,8 @@ import Explore from './pages/Explore';
 import ForgotPassword from './pages/ForgotPassword';
 import NotFound from './pages/NotFound';
 import Player from './components/Player';
+import AuthModal from './components/AuthModal';
+import { AuthModalContext } from './contexts/AuthModalContext';
 
 // Wrapper component to check for reset token in URL
 function ResetPasswordRoute() {
@@ -30,6 +30,10 @@ function ResetPasswordRoute() {
 
 function App() {
   const { setUser, setLoading, isAuthenticated } = useAuthStore();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState('login');
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -46,16 +50,51 @@ function App() {
     checkAuth();
   }, [setUser, setLoading]);
 
+  // Open auth modal when navigating to /login or /register
+  useEffect(() => {
+    if (location.pathname === '/login' || location.pathname === '/register') {
+      if (!isAuthenticated) {
+        setAuthModalTab(location.pathname === '/register' ? 'register' : 'login');
+        setAuthModalOpen(true);
+      }
+    }
+  }, [location.pathname, isAuthenticated]);
+
+  // Close modal and navigate away when authenticated
+  useEffect(() => {
+    if (isAuthenticated && authModalOpen) {
+      setAuthModalOpen(false);
+    }
+  }, [isAuthenticated, authModalOpen]);
+
+  const handleCloseAuthModal = () => {
+    setAuthModalOpen(false);
+    // Navigate back to previous page or landing
+    if (location.pathname === '/login' || location.pathname === '/register') {
+      const token = searchParams.get('token');
+      if (!token) {
+        // Only navigate back if there's no token (token URLs should stay)
+        window.history.replaceState({}, '', '/');
+      }
+    }
+  };
+
+  const openAuthModal = (tab = 'login') => {
+    setAuthModalTab(tab);
+    setAuthModalOpen(true);
+  };
+
   return (
-    <div className="min-h-screen bg-bg-dark text-text-primary">
-      <Routes>
+    <AuthModalContext.Provider value={{ openAuthModal }}>
+      <div className="min-h-screen bg-bg-dark text-text-primary">
+        <Routes>
         <Route
           path="/login"
-          element={<Login />}
+          element={isAuthenticated ? <Navigate to="/home" /> : <Landing />}
         />
         <Route
           path="/register"
-          element={<Register />}
+          element={isAuthenticated ? <Navigate to="/home" /> : <Landing />}
         />
         <Route
           path="/forgot-password"
@@ -89,9 +128,15 @@ function App() {
           path="*"
           element={<NotFound />}
         />
-      </Routes>
-      <Player />
-    </div>
+        </Routes>
+        <Player />
+        <AuthModal 
+          isOpen={authModalOpen} 
+          onClose={handleCloseAuthModal}
+          initialTab={authModalTab}
+        />
+      </div>
+    </AuthModalContext.Provider>
   );
 }
 

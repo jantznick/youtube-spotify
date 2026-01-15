@@ -6,8 +6,10 @@ import { songsAPI, playlistsAPI } from '../api/api';
 import SongList from '../components/SongList';
 import NotificationModal from '../components/NotificationModal';
 import AddSongModal from '../components/AddSongModal';
+import { useAuthModal } from '../contexts/AuthModalContext';
 
 function Explore() {
+  const { openAuthModal } = useAuthModal();
   const [songs, setSongs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(null);
@@ -79,9 +81,9 @@ function Explore() {
           </Link>
           <div className="flex items-center gap-4">
             <span className="text-text-secondary">
-              <Link to="/register" className="text-primary hover:text-primary-dark">
+              <button onClick={() => openAuthModal('register')} className="text-primary hover:text-primary-dark">
                 Sign up free
-              </Link> to create playlists and save your favorites
+              </button> to create playlists and save your favorites
             </span>
           </div>
         </div>
@@ -115,25 +117,28 @@ function Explore() {
             <h2 className="text-2xl font-bold mb-4 text-text-primary">Import Playlist</h2>
             <p className="text-text-muted mb-6">
               To import playlists from YouTube or Spotify, please{' '}
-              <Link to="/register" className="text-primary hover:text-primary-dark">
+              <button onClick={() => openAuthModal('register')} className="text-primary hover:text-primary-dark">
                 sign up for free
-              </Link>
+              </button>
               {' '}or{' '}
-              <Link to="/login" className="text-primary hover:text-primary-dark">
+              <button onClick={() => openAuthModal('login')} className="text-primary hover:text-primary-dark">
                 sign in
-              </Link>
+              </button>
               .
             </p>
             <p className="text-sm text-text-muted mb-6">
               Once you're signed in, you can import playlists, create your own playlists, and save your favorite songs.
             </p>
             <div className="flex gap-2">
-              <Link
-                to="/register"
+              <button
+                onClick={() => {
+                  setShowImportModal(false);
+                  openAuthModal('register');
+                }}
                 className="flex-1 py-3 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition text-center font-medium"
               >
                 Sign Up Free
-              </Link>
+              </button>
               <button
                 onClick={() => setShowImportModal(false)}
                 className="flex-1 py-3 bg-bg-hover border border-border text-text-primary rounded-lg hover:bg-bg-card transition"

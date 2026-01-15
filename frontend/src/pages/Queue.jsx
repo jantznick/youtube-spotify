@@ -23,6 +23,7 @@ import { playlistsAPI } from '../api/api';
 import Sidebar from '../components/Sidebar';
 import NotificationModal from '../components/NotificationModal';
 import ConfirmModal from '../components/ConfirmModal';
+import { useAuthModal } from '../contexts/AuthModalContext';
 
 // Sortable Queue Item Component
 function SortableQueueItem({ song, index, actualIndex, isCurrentlyPlaying, onPlay, onPlayNext, onRemove, setConfirmModal }) {
@@ -121,6 +122,7 @@ function SortableQueueItem({ song, index, actualIndex, isCurrentlyPlaying, onPla
 
 function Queue() {
   const navigate = useNavigate();
+  const { openAuthModal } = useAuthModal();
   const { 
     queue, 
     currentIndex, 
@@ -278,9 +280,9 @@ function Queue() {
             </Link>
             <div className="flex items-center gap-4">
             <span className="text-text-secondary">
-              <Link to="/register" className="text-primary hover:text-primary-dark">
+              <button onClick={() => openAuthModal('register')} className="text-primary hover:text-primary-dark">
                 Sign up free
-              </Link> to create playlists and save your favorites
+              </button> to create playlists and save your favorites
             </span>
             </div>
           </div>

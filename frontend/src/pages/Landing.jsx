@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
+import { useAuthModal } from '../contexts/AuthModalContext';
 
 function Landing() {
+  const { openAuthModal } = useAuthModal();
   return (
     <div className="min-h-screen bg-gradient-to-b from-bg-dark via-bg-dark to-bg-card">
       {/* Navigation */}
@@ -15,18 +17,18 @@ function Landing() {
             <span className="text-lg sm:text-xl font-bold text-text-primary">MusicDocks</span>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
-            <Link
-              to="/register"
+            <button
+              onClick={() => openAuthModal('register')}
               className="px-4 sm:px-6 py-1.5 sm:py-2 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition-all font-medium text-sm sm:text-base"
             >
               Sign Up
-            </Link>
-            <Link 
-              to="/login"
+            </button>
+            <button 
+              onClick={() => openAuthModal('login')}
               className="text-text-primary transition-all font-medium text-sm sm:text-base"
             >
               Sign In
-            </Link>
+            </button>
           </div>
         </div>
       </nav>
@@ -420,18 +422,18 @@ function Landing() {
             Join thousands of music lovers organizing their collections with MusicDocks. Free forever, no credit card required.
           </p>
           <div className="flex items-center justify-center gap-6 flex-wrap">
-            <Link
-              to="/register"
+            <button
+              onClick={() => openAuthModal('register')}
               className="px-8 py-4 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl hover:shadow-lg hover:shadow-primary/30 transition-all font-medium text-lg"
             >
               Get Started Free
-            </Link>
-            <Link
-              to="/login"
+            </button>
+            <button
+              onClick={() => openAuthModal('login')}
               className="px-8 py-4 bg-bg-card border border-border text-text-primary rounded-xl hover:bg-bg-hover transition-all font-medium text-lg"
             >
               Sign In
-            </Link>
+            </button>
           </div>
         </div>
       </section>
