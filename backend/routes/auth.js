@@ -679,13 +679,13 @@ router.post('/magic-token/login', async (req, res) => {
       });
     });
 
-    // Set session data
+    // Set session data - this marks the session as modified
     console.log('[MAGIC-TOKEN-LOGIN] Setting session for user:', magicToken.user.id);
     req.session.userId = magicToken.user.id;
     req.session.username = magicToken.user.username;
     
-    // Explicitly mark session as modified to ensure cookie is set
-    req.session.cookie.expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    // Touch the session to ensure it's marked as needing a cookie
+    req.session.touch();
     
     console.log('[MAGIC-TOKEN-LOGIN] Session data set:', {
       userId: req.session.userId,

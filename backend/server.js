@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
+import { Pool } from 'pg';
 import cookieParser from 'cookie-parser';
 import { PrismaClient } from '@prisma/client';
 
@@ -18,6 +19,11 @@ const prisma = new PrismaClient();
 
 const PORT = process.env.PORT || 3001;
 
+// Trust proxy in production (needed for secure cookies behind reverse proxy)
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
@@ -26,37 +32,49 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Session configuration with PostgreSQL store
+// Session configuration with PostgreSQL store (matching parlay-streak setup)
 const PgSession = connectPgSimple(session);
 
+// Create PostgreSQL connection pool for sessions
+const pgPool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
 // Determine cookie domain - use .musicdocks.com for production subdomains
+const isProduction = process.env.NODE_ENV === 'production';
 const cookieDomain = process.env.COOKIE_DOMAIN || 
-  (process.env.FRONTEND_URL?.includes('musicdocks.com') ? '.musicdocks.com' : undefined);
+  (isProduction ? '.musicdocks.com' : undefined);
 
 console.log('Session config:', {
   nodeEnv: process.env.NODE_ENV,
+  isProduction,
   cookieDomain,
   frontendUrl: process.env.FRONTEND_URL,
-  secure: true,
-  sameSite: process.env.COOKIE_SAME_SITE || 'lax',
+  secure: isProduction,
+  sameSite: isProduction ? 'none' : 'lax',
+  proxy: isProduction,
 });
 
 app.use(session({
   store: new PgSession({
-    conString: process.env.DATABASE_URL,
+    pool: pgPool,
     tableName: 'session',
-    createTableIfMissing: true,
+    createTableIfMissing: false, // Prisma handles table creation
   }),
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
   resave: false,
-  saveUninitialized: false,
+  saveUninitialized: false, // Don't save uninitialized sessions (matching parlay-streak)
+  name: 'connect.sid',
   cookie: {
-    httpOnly: true,
-    secure: true, // Always true for HTTPS
-    sameSite: process.env.COOKIE_SAME_SITE || 'lax',
-    domain: cookieDomain,
-    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    secure: isProduction, // true in production (requires HTTPS)
+    httpOnly: true, // Prevent client-side JS from accessing cookie
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    sameSite: isProduction ? 'none' : 'lax', // 'none' required for cross-subdomain cookies in production
+    domain: cookieDomain, // Allow cookies across subdomains in production
+    path: '/', // Ensure cookie is available for all paths
   },
+  rolling: false,
+  proxy: isProduction, // Trust proxy for secure cookies behind reverse proxy
 }));
 
 // Debug middleware - log session and cookie info for auth routes
