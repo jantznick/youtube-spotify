@@ -203,7 +203,8 @@ const requireAuth = (req, res, next) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/songs', requireAuth, songRoutes);
+// Songs GET endpoint is public, but PUT requires auth
+app.use('/api/songs', songRoutes);
 app.use('/api/playlists', requireAuth, playlistRoutes);
 app.use('/api/user', requireAuth, userRoutes);
 

@@ -113,9 +113,12 @@ router.get('/:id', async (req, res) => {
 });
 
 
-// Update a song (global update, affects all users)
+// Update a song (global update, affects all users) - requires auth
 router.put('/:id', async (req, res) => {
   try {
+    if (!req.session || !req.session.userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     const userId = req.session.userId;
     const { id } = req.params;
     const { title, artist, thumbnailUrl, duration } = req.body;

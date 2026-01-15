@@ -16,16 +16,16 @@ function Landing() {
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
             <Link
-              to="/login"
-              className="text-sm sm:text-base text-text-secondary hover:text-text-primary transition-colors px-2 sm:px-0"
-            >
-              Sign In
-            </Link>
-            <Link
               to="/register"
               className="px-4 sm:px-6 py-1.5 sm:py-2 bg-gradient-to-r from-primary to-primary-dark text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition-all font-medium text-sm sm:text-base"
             >
-              Get Started
+              Sign Up
+            </Link>
+            <Link 
+              to="/login"
+              className="text-text-primary transition-all font-medium text-sm sm:text-base"
+            >
+              Sign In
             </Link>
           </div>
         </div>
@@ -42,16 +42,10 @@ function Landing() {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
             <Link
-              to="/register"
+              to="/explore"
               className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl hover:shadow-lg hover:shadow-primary/30 transition-all font-medium text-base sm:text-lg"
             >
               Start Listening Free
-            </Link>
-            <Link
-              to="/login"
-              className="w-full sm:w-auto px-6 sm:px-8 py-3 sm:py-4 bg-bg-card border border-border text-text-primary rounded-xl hover:bg-bg-hover transition-all font-medium text-base sm:text-lg"
-            >
-              Sign In
             </Link>
           </div>
         </div>

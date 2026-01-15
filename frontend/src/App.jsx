@@ -8,6 +8,7 @@ import Home from './pages/Home';
 import Playlist from './pages/Playlist';
 import Queue from './pages/Queue';
 import Landing from './pages/Landing';
+import Explore from './pages/Explore';
 import ForgotPassword from './pages/ForgotPassword';
 import NotFound from './pages/NotFound';
 import Player from './components/Player';
@@ -78,14 +79,18 @@ function App() {
         />
         <Route
           path="/queue"
-          element={isAuthenticated ? <Queue /> : <Navigate to="/" />}
+          element={<Queue />}
+        />
+        <Route
+          path="/explore"
+          element={<Explore />}
         />
         <Route
           path="*"
           element={<NotFound />}
         />
       </Routes>
-      {isAuthenticated && <Player />}
+      <Player />
     </div>
   );
 }

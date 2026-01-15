@@ -16,6 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Link } from 'react-router-dom';
 import usePlayerStore from '../store/playerStore';
 import useAuthStore from '../store/authStore';
 import { playlistsAPI } from '../api/api';
@@ -32,7 +33,7 @@ function SortableQueueItem({ song, index, actualIndex, isCurrentlyPlaying, onPla
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: `queue-${song.id}-${actualIndex}` });
+  } = useSortable({ id: `queue-item-${actualIndex}` });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -130,7 +131,7 @@ function Queue() {
     playNext,
     reorderQueue,
   } = usePlayerStore();
-  const { user } = useAuthStore();
+  const { user, isAuthenticated } = useAuthStore();
   const [notification, setNotification] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
   const [playlists, setPlaylists] = useState([]);
@@ -143,16 +144,18 @@ function Queue() {
   );
 
   useEffect(() => {
-    const loadPlaylists = async () => {
-      try {
-        const data = await playlistsAPI.getAll();
-        setPlaylists(data.playlists);
-      } catch (error) {
-        console.error('Failed to load playlists:', error);
-      }
-    };
-    loadPlaylists();
-  }, []);
+    if (isAuthenticated) {
+      const loadPlaylists = async () => {
+        try {
+          const data = await playlistsAPI.getAll();
+          setPlaylists(data.playlists);
+        } catch (error) {
+          console.error('Failed to load playlists:', error);
+        }
+      };
+      loadPlaylists();
+    }
+  }, [isAuthenticated]);
 
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type });
@@ -229,21 +232,18 @@ function Queue() {
 
     if (over && active.id !== over.id) {
       const upcomingSongs = queue.slice(currentIndex + 1);
-      // Extract song ID from the active/over IDs (format: queue-{songId}-{index})
-      const activeMatch = active.id.toString().match(/queue-([^-]+)-\d+$/);
-      const overMatch = over.id.toString().match(/queue-([^-]+)-\d+$/);
+      // Extract index from ID (format: queue-item-{index})
+      const activeMatch = active.id.toString().match(/queue-item-(\d+)$/);
+      const overMatch = over.id.toString().match(/queue-item-(\d+)$/);
       
       if (activeMatch && overMatch) {
-        const activeSongId = activeMatch[1];
-        const overSongId = overMatch[1];
-        const activeIndex = upcomingSongs.findIndex(s => s.id === activeSongId);
-        const overIndex = upcomingSongs.findIndex(s => s.id === overSongId);
+        const activeIdx = parseInt(activeMatch[1]) - (currentIndex + 1);
+        const overIdx = parseInt(overMatch[1]) - (currentIndex + 1);
 
-        if (activeIndex !== -1 && overIndex !== -1) {
-          const newUpcomingSongs = arrayMove(upcomingSongs, activeIndex, overIndex);
+        if (activeIdx >= 0 && overIdx >= 0 && activeIdx < upcomingSongs.length && overIdx < upcomingSongs.length) {
+          const newUpcomingSongs = arrayMove(upcomingSongs, activeIdx, overIdx);
           const newQueue = [...queue.slice(0, currentIndex + 1), ...newUpcomingSongs];
           reorderQueue(newQueue);
-          showNotification('Queue reordered', 'success');
         }
       }
     }
@@ -253,34 +253,58 @@ function Queue() {
 
   return (
     <div className="flex h-screen bg-bg-dark">
-      <Sidebar
-        onLogout={() => navigate('/')}
-        username={user?.username}
-        email={user?.email}
-        playlists={playlists}
-        onCreatePlaylist={() => {}}
-        onPlaySong={() => {}}
-        onDeletePlaylist={() => {}}
-        onRefresh={() => {}}
-      />
-      <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <button
-            onClick={() => navigate('/home')}
-            className="mb-4 text-sm sm:text-base text-text-muted hover:text-text-primary transition flex items-center gap-2"
-          >
-            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back
-          </button>
-
-          <div className="mb-6 lg:mb-8">
-            <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-2">Queue</h1>
-            <p className="text-sm sm:text-base text-text-muted">
-              {upcomingSongs.length} {upcomingSongs.length === 1 ? 'song' : 'songs'} upcoming
-            </p>
+      {isAuthenticated && (
+        <Sidebar
+          onLogout={() => navigate('/')}
+          username={user?.username}
+          email={user?.email}
+          playlists={playlists}
+          onCreatePlaylist={() => {}}
+          onPlaySong={() => {}}
+          onDeletePlaylist={() => {}}
+          onRefresh={() => {}}
+        />
+      )}
+      {!isAuthenticated && (
+        <header className="fixed top-0 left-0 right-0 z-40 bg-bg-dark/80 backdrop-blur-md border-b border-border">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+            <Link to="/explore" className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-md bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+              </div>
+              <span className="text-xl font-bold text-text-primary">MusicDocks</span>
+            </Link>
+            <div className="flex items-center gap-4">
+            <span className="text-text-secondary">
+              <Link to="/register" className="text-primary hover:text-primary-dark">
+                Sign up free
+              </Link> to create playlists and save your favorites
+            </span>
+            </div>
           </div>
+        </header>
+      )}
+      <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
+        <div className={`flex-1 overflow-y-auto ${!isAuthenticated ? 'pt-24' : ''} ${isAuthenticated ? 'p-4 sm:p-6 lg:p-8' : ''}`}>
+          <div className={!isAuthenticated ? 'max-w-7xl mx-auto px-4 sm:px-6 py-8' : 'p-4 sm:p-6 lg:p-8'}>
+            <button
+              onClick={() => navigate(isAuthenticated ? '/home' : '/explore')}
+              className="mb-4 text-sm sm:text-base text-text-muted hover:text-text-primary transition flex items-center gap-2"
+            >
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back
+            </button>
+
+            <div className="mb-6 lg:mb-8">
+              <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-2">Queue</h1>
+              <p className="text-sm sm:text-base text-text-muted">
+                {upcomingSongs.length} {upcomingSongs.length === 1 ? 'song' : 'songs'} upcoming
+              </p>
+            </div>
 
           {currentSong && (
             <div className="mb-6 p-4 bg-primary/10 border border-primary/30 rounded-xl">
@@ -320,7 +344,7 @@ function Queue() {
               onDragEnd={handleDragEnd}
             >
               <SortableContext
-                items={upcomingSongs.map((song, idx) => `queue-${song.id}-${currentIndex + 1 + idx}`)}
+                items={upcomingSongs.map((_, idx) => `queue-item-${currentIndex + 1 + idx}`)}
                 strategy={verticalListSortingStrategy}
               >
                 <div className="space-y-2">
@@ -345,6 +369,7 @@ function Queue() {
               </SortableContext>
             </DndContext>
           )}
+          </div>
         </div>
       </div>
 
