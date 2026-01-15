@@ -58,7 +58,8 @@ function AddSongModal({ onClose, onAdd, onImportPlaylist }) {
         youtubeUrl,
       });
 
-      onClose();
+      // Clear the input but don't close the modal
+      setYoutubeUrl('');
     } catch (err) {
       setError(err.message || 'Failed to add song');
     } finally {
@@ -78,7 +79,9 @@ function AddSongModal({ onClose, onAdd, onImportPlaylist }) {
         youtubeUrl: cleanUrl,
       });
 
-      onClose();
+      // Clear the input but don't close the modal
+      setYoutubeUrl('');
+      setShowPlaylistPrompt(false);
     } catch (err) {
       setError(err.message || 'Failed to add song');
     } finally {
@@ -169,8 +172,19 @@ function AddSongModal({ onClose, onAdd, onImportPlaylist }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto"
+      onClick={(e) => {
+        // Only close if clicking the backdrop, not the modal content
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div 
+        className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-md shadow-2xl my-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 className="text-xl sm:text-2xl font-bold mb-4 text-text-primary">Add Song</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (

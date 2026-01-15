@@ -1,4 +1,14 @@
+import usePlayerStore from '../store/playerStore';
+import { useState } from 'react';
+
 function SongList({ songs, onPlay }) {
+  const { addToQueue, currentSong } = usePlayerStore();
+  const [hoveredSongId, setHoveredSongId] = useState(null);
+
+  const handleAddToQueue = (e, song) => {
+    e.stopPropagation();
+    addToQueue(song);
+  };
   if (songs.length === 0) {
     return (
       <div className="text-center text-text-muted py-20">
@@ -40,8 +50,25 @@ function SongList({ songs, onPlay }) {
                 </svg>
               </div>
             )}
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
-              <button className="w-14 h-14 bg-gradient-to-r from-primary to-primary-dark rounded-full flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform">
+            <div 
+              className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all rounded-lg flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100"
+              onMouseEnter={() => setHoveredSongId(song.id)}
+              onMouseLeave={() => setHoveredSongId(null)}
+            >
+              <button 
+                onClick={(e) => handleAddToQueue(e, song)}
+                className="w-12 h-12 bg-accent/90 hover:bg-accent rounded-full flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform"
+                title="Add to queue"
+              >
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+              <button 
+                onClick={() => onPlay(song)}
+                className="w-14 h-14 bg-gradient-to-r from-primary to-primary-dark rounded-full flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform"
+                title="Play now"
+              >
                 <svg className="w-7 h-7 text-white ml-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                 </svg>

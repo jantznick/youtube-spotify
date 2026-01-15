@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import YouTube from 'react-youtube';
 import usePlayerStore, { playerStore } from '../store/playerStore';
 
@@ -14,10 +15,15 @@ function Player() {
     play,
     pause,
     stop,
+    showQueue,
+    setShowQueue,
+    removeFromQueue,
   } = usePlayerStore();
   const playerRef = useRef(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showToast, setShowToast] = useState(true);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Control play/pause when isPlaying state changes
   useEffect(() => {
@@ -192,6 +198,10 @@ function Player() {
                     playerRef.current.stopVideo();
                   }
                   stop();
+                  // If on queue page, navigate to homepage
+                  if (location.pathname === '/queue') {
+                    navigate('/home');
+                  }
                 }}
                 className="text-red-400 hover:text-red-300 transition-colors"
                 title="Stop"
@@ -294,9 +304,75 @@ function Player() {
         )}
 
         {!isMinimized && (
-          <div className="text-xs sm:text-sm text-text-muted text-center">
-            {currentIndex + 1} of {queue.length}
-          </div>
+          <>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs sm:text-sm text-text-muted">
+                {currentIndex + 1} of {queue.length}
+              </div>
+              <button
+                onClick={() => setShowQueue(!showQueue)}
+                className="text-xs sm:text-sm text-text-muted hover:text-text-primary transition-colors flex items-center gap-1"
+                title={showQueue ? 'Hide queue' : 'Show queue'}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {showQueue ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  )}
+                </svg>
+                Queue
+              </button>
+            </div>
+            
+            {showQueue && queue.length > 0 && (
+              <div className="mt-2 border-t border-border pt-2">
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <div className="text-xs font-medium text-text-muted">Up Next</div>
+                  {queue.length - currentIndex - 1 > 20 && (
+                    <button
+                      onClick={() => navigate('/queue')}
+                      className="text-xs text-primary hover:text-primary-dark transition-colors"
+                    >
+                      View All ({queue.length - currentIndex - 1})
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-80 overflow-y-auto space-y-1 pr-1">
+                  {queue.slice(currentIndex + 1).map((song, idx) => {
+                    const actualIndex = currentIndex + 1 + idx;
+                    return (
+                      <div
+                        key={`${song.id}-${actualIndex}`}
+                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-hover transition-colors group"
+                      >
+                        {song.thumbnailUrl && (
+                          <img
+                            src={song.thumbnailUrl}
+                            alt={song.title}
+                            className="w-10 h-10 object-cover rounded flex-shrink-0"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-text-primary truncate">{song.title}</div>
+                          <div className="text-xs text-text-muted truncate">{song.artist || 'Unknown Artist'}</div>
+                        </div>
+                        <button
+                          onClick={() => removeFromQueue(actualIndex)}
+                          className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-400 transition-all p-1"
+                          title="Remove from queue"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -1,6 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { playlistsAPI, songsAPI } from '../api/api';
 import usePlayerStore from '../store/playerStore';
 import useAuthStore from '../store/authStore';
@@ -9,6 +25,117 @@ import AddSongModal from '../components/AddSongModal';
 import NotificationModal from '../components/NotificationModal';
 import ConfirmModal from '../components/ConfirmModal';
 import PlaylistSettingsModal from '../components/PlaylistSettingsModal';
+
+// Sortable Song Item Component
+function SortableSongItem({ playlistSong, index, isCurrentlyPlaying, onPlay, onRemove, onPlayNext, onAddToQueue, setConfirmModal, isSortable }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: playlistSong.id, disabled: !isSortable });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition || 'transform 300ms cubic-bezier(0.2, 0, 0.2, 1), opacity 200ms ease',
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const song = playlistSong.song;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border group ${
+        isCurrentlyPlaying
+          ? 'bg-primary/10 border-primary/50'
+          : 'bg-bg-card hover:bg-bg-hover border-border hover:border-primary/30'
+      }`}
+    >
+      <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
+        <div className="flex items-center gap-2">
+          {isSortable && (
+            <div
+              {...attributes}
+              {...listeners}
+              className="text-text-muted hover:text-text-primary transition cursor-grab active:cursor-grabbing flex-shrink-0 touch-none"
+              title="Drag to reorder"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+              </svg>
+            </div>
+          )}
+          <div className="text-text-muted w-6 sm:w-8 text-center font-medium text-sm sm:text-base flex-shrink-0">{index + 1}</div>
+        </div>
+        {song.thumbnailUrl && (
+          <img
+            src={song.thumbnailUrl}
+            alt={song.title}
+            className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-lg flex-shrink-0"
+          />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm sm:text-base text-text-primary truncate">{song.title}</div>
+          <div className="text-xs sm:text-sm text-text-muted truncate">
+            {song.artist || 'Unknown Artist'}
+          </div>
+        </div>
+      </div>
+                    <div className="flex items-center gap-2 w-full sm:w-auto sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddToQueue(song);
+                        }}
+                        className="flex-1 sm:flex-initial px-3 sm:px-4 py-2 bg-accent/10 hover:bg-accent/20 text-accent rounded-lg transition text-xs sm:text-sm"
+                        title="Add to queue"
+                      >
+                        <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        Queue
+                      </button>
+                      <button
+                        onClick={() => onPlayNext(song, index)}
+                        className="flex-1 sm:flex-initial px-3 sm:px-4 py-2 bg-accent/10 hover:bg-accent/20 text-accent rounded-lg transition text-xs sm:text-sm"
+                        title="Play next"
+                      >
+                        <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                        </svg>
+                        Next
+                      </button>
+        <button
+          onClick={() => onPlay(song, index)}
+          className="flex-1 sm:flex-initial px-3 sm:px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition text-xs sm:text-sm"
+        >
+          Play
+        </button>
+        <button
+          onClick={() => {
+            setConfirmModal({
+              message: `Remove "${song.title}" from this playlist?`,
+              onConfirm: () => {
+                onRemove(song.id);
+                setConfirmModal(null);
+              },
+              onCancel: () => setConfirmModal(null),
+              type: 'warning',
+            });
+          }}
+          className="flex-1 sm:flex-initial px-3 sm:px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition text-xs sm:text-sm"
+        >
+          Remove
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function Playlist() {
   const { id } = useParams();
@@ -26,7 +153,14 @@ function Playlist() {
   const [pollingCount, setPollingCount] = useState(0);
   const [socketConnected, setSocketConnected] = useState(false);
   const socketRef = useRef(null);
-  const { currentSong, setCurrentSong, setQueue, currentPlaylist, isPlaying, togglePlay } = usePlayerStore();
+  const { currentSong, setCurrentSong, setQueue, currentPlaylist, isPlaying, togglePlay, playNext, addToQueue } = usePlayerStore();
+  
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
   const { user } = useAuthStore();
 
   const showNotification = (message, type = 'info') => {
@@ -410,7 +544,7 @@ function Playlist() {
       await playlistsAPI.addSong(id, songId);
       await loadData();
       showNotification('Song added to playlist!', 'success');
-      setShowAddSongModal(false);
+      // Don't close modal - allow adding multiple songs
     } catch (error) {
       showNotification('Failed to add song to playlist', 'error');
     }
@@ -423,6 +557,103 @@ function Playlist() {
       showNotification('Song removed from playlist', 'success');
     } catch (error) {
       showNotification('Failed to remove song from playlist', 'error');
+    }
+  };
+
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = playlist.playlistSongs.findIndex(ps => ps.id === active.id);
+      const newIndex = playlist.playlistSongs.findIndex(ps => ps.id === over.id);
+
+      const newPlaylistSongs = arrayMove(playlist.playlistSongs, oldIndex, newIndex);
+
+      // Update local state optimistically
+      setPlaylist({
+        ...playlist,
+        playlistSongs: newPlaylistSongs,
+      });
+
+      // If this playlist is currently playing, update the player queue and currentIndex
+      if (currentPlaylist?.id === playlist.id) {
+        const updatedPlaylist = {
+          ...playlist,
+          playlistSongs: newPlaylistSongs,
+        };
+        
+        // Create new queue from reordered playlist
+        const newQueue = newPlaylistSongs.map(ps => ps.song);
+        const currentSongId = currentSong?.id;
+        const newCurrentIndex = newQueue.findIndex(song => song.id === currentSongId);
+        
+        // Update everything together - setCurrentSong will set the queue from the playlist
+        if (newCurrentIndex !== -1) {
+          setCurrentSong(newQueue[newCurrentIndex], updatedPlaylist, newCurrentIndex);
+        } else {
+          // Fallback: just update queue if current song not found
+          setQueue(newQueue);
+        }
+      }
+
+      // Send reorder request to backend
+      try {
+        const songIds = newPlaylistSongs.map(ps => ps.song.id);
+        await playlistsAPI.reorder(id, songIds);
+        showNotification('Playlist reordered', 'success');
+      } catch (error) {
+        // Revert on error
+        await loadData();
+        showNotification('Failed to reorder playlist', 'error');
+      }
+    }
+  };
+
+  const handlePlayNext = async (song, currentIndex) => {
+    // Find the current playing song's index in the playlist
+    const currentSongIndex = playlist.playlistSongs.findIndex(
+      ps => ps.song.id === currentSong?.id
+    );
+    
+    // If we have a current song and it's in this playlist, move the clicked song right after it
+    if (currentSongIndex !== -1 && currentPlaylist?.id === playlist.id) {
+      const newPlaylistSongs = [...playlist.playlistSongs];
+      const [movedSong] = newPlaylistSongs.splice(currentIndex, 1);
+      // Insert right after current song
+      const targetIndex = currentSongIndex + 1;
+      newPlaylistSongs.splice(targetIndex, 0, movedSong);
+      
+      // Update local state first for smooth animation
+      const updatedPlaylist = {
+        ...playlist,
+        playlistSongs: newPlaylistSongs,
+      };
+      setPlaylist(updatedPlaylist);
+      
+      // Update the player queue to match the new playlist order
+      const newQueue = newPlaylistSongs.map(ps => ps.song);
+      const newCurrentIndex = newQueue.findIndex(s => s.id === currentSong?.id);
+      
+      // Update queue and currentIndex together
+      setQueue(newQueue);
+      if (newCurrentIndex !== -1) {
+        setCurrentSong(newQueue[newCurrentIndex], updatedPlaylist, newCurrentIndex);
+      }
+      
+      // Send reorder request to backend
+      try {
+        const songIds = newPlaylistSongs.map(ps => ps.song.id);
+        await playlistsAPI.reorder(id, songIds);
+        showNotification(`"${song.title}" will play next`, 'success');
+      } catch (error) {
+        // Revert on error
+        await loadData();
+        showNotification('Failed to reorder playlist', 'error');
+      }
+    } else {
+      // No current song or not in this playlist, just add to queue
+      playNext(song);
+      showNotification(`"${song.title}" will play next`, 'success');
     }
   };
 
@@ -614,63 +845,38 @@ function Playlist() {
 
           {/* Songs List */}
           {Array.isArray(playlist.playlistSongs) && playlist.playlistSongs.length > 0 ? (
-            <div className="space-y-2">
-              {playlist.playlistSongs.map((playlistSong, index) => {
-                const song = playlistSong.song;
-                const isCurrentlyPlaying = isCurrentPlaylist && currentSong?.id === song.id;
-                return (
-                  <div
-                    key={playlistSong.id}
-                    className={`flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl transition border group ${
-                      isCurrentlyPlaying
-                        ? 'bg-primary/10 border-primary/50'
-                        : 'bg-bg-card hover:bg-bg-hover border-border hover:border-primary/30'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
-                      <div className="text-text-muted w-6 sm:w-8 text-center font-medium text-sm sm:text-base flex-shrink-0">{index + 1}</div>
-                      {song.thumbnailUrl && (
-                        <img
-                          src={song.thumbnailUrl}
-                          alt={song.title}
-                          className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-lg flex-shrink-0"
-                        />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm sm:text-base text-text-primary truncate">{song.title}</div>
-                        <div className="text-xs sm:text-sm text-text-muted truncate">
-                          {song.artist || 'Unknown Artist'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 w-full sm:w-auto sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => handlePlaySong(song, index)}
-                        className="flex-1 sm:flex-initial px-3 sm:px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition text-xs sm:text-sm"
-                      >
-                        Play
-                      </button>
-                      <button
-                        onClick={() => {
-                          setConfirmModal({
-                            message: `Remove "${song.title}" from this playlist?`,
-                            onConfirm: () => {
-                              handleRemoveSong(song.id);
-                              setConfirmModal(null);
-                            },
-                            onCancel: () => setConfirmModal(null),
-                            type: 'warning',
-                          });
-                        }}
-                        className="flex-1 sm:flex-initial px-3 sm:px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition text-xs sm:text-sm"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={playlist.playlistSongs.map(ps => ps.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-2">
+                  {playlist.playlistSongs.map((playlistSong, index) => {
+                    const song = playlistSong.song;
+                    const isCurrentlyPlaying = isCurrentPlaylist && currentSong?.id === song.id;
+                    const isSortable = true; // Allow sorting for all playlists
+                    return (
+                      <SortableSongItem
+                        key={playlistSong.id}
+                        playlistSong={playlistSong}
+                        index={index}
+                        isCurrentlyPlaying={isCurrentlyPlaying}
+                        onPlay={handlePlaySong}
+                        onRemove={handleRemoveSong}
+                        onPlayNext={handlePlayNext}
+                        onAddToQueue={addToQueue}
+                        setConfirmModal={setConfirmModal}
+                        isSortable={isSortable}
+                      />
+                    );
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
           ) : (
             <div className="text-center text-text-muted py-20">
               <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-bg-card flex items-center justify-center">
@@ -719,8 +925,19 @@ function Playlist() {
 
           {/* Add Song Modal */}
           {showAddSongModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-              <div className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl my-auto">
+            <div 
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto"
+              onClick={(e) => {
+                // Only close if clicking the backdrop, not the modal content
+                if (e.target === e.currentTarget) {
+                  setShowAddSongModal(false);
+                }
+              }}
+            >
+              <div 
+                className="bg-bg-card border border-border p-4 sm:p-6 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl my-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xl sm:text-2xl font-bold text-text-primary">Add Songs to Playlist</h3>
                   <button

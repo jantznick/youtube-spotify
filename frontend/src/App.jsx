@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Home from './pages/Home';
 import Playlist from './pages/Playlist';
+import Queue from './pages/Queue';
 import Landing from './pages/Landing';
 import ForgotPassword from './pages/ForgotPassword';
 import NotFound from './pages/NotFound';
@@ -74,6 +75,10 @@ function App() {
         <Route
           path="/playlist/:id"
           element={isAuthenticated ? <Playlist /> : <Navigate to="/" />}
+        />
+        <Route
+          path="/queue"
+          element={isAuthenticated ? <Queue /> : <Navigate to="/" />}
         />
         <Route
           path="*"

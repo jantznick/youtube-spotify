@@ -1,0 +1,371 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import usePlayerStore from '../store/playerStore';
+import useAuthStore from '../store/authStore';
+import { playlistsAPI } from '../api/api';
+import Sidebar from '../components/Sidebar';
+import NotificationModal from '../components/NotificationModal';
+import ConfirmModal from '../components/ConfirmModal';
+
+// Sortable Queue Item Component
+function SortableQueueItem({ song, index, actualIndex, isCurrentlyPlaying, onPlay, onPlayNext, onRemove, setConfirmModal }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `queue-${song.id}-${actualIndex}` });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition || 'transform 300ms cubic-bezier(0.2, 0, 0.2, 1), opacity 200ms ease',
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-4 p-4 rounded-xl border group ${
+        isCurrentlyPlaying
+          ? 'bg-primary/10 border-primary/50'
+          : 'bg-bg-card hover:bg-bg-hover border-border hover:border-primary/30'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <div
+          {...attributes}
+          {...listeners}
+          className="text-text-muted hover:text-text-primary transition cursor-grab active:cursor-grabbing flex-shrink-0 touch-none"
+          title="Drag to reorder"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+          </svg>
+        </div>
+        <div className="text-text-muted w-8 text-center font-medium text-sm flex-shrink-0">
+          {index + 1}
+        </div>
+      </div>
+      {song.thumbnailUrl && (
+        <img
+          src={song.thumbnailUrl}
+          alt={song.title}
+          className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
+        />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="font-semibold text-text-primary truncate">{song.title}</div>
+        <div className="text-sm text-text-muted truncate">
+          {song.artist || 'Unknown Artist'}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={() => onPlayNext(song, actualIndex)}
+          className="px-3 py-2 bg-accent/10 hover:bg-accent/20 text-accent rounded-lg transition text-sm"
+          title="Play next"
+        >
+          <svg className="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+          </svg>
+          Next
+        </button>
+        <button
+          onClick={() => onPlay(song, actualIndex)}
+          className="px-4 py-2 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:shadow-lg hover:shadow-primary/30 transition text-sm"
+        >
+          Play
+        </button>
+        <button
+          onClick={() => {
+            setConfirmModal({
+              message: `Remove "${song.title}" from queue?`,
+              onConfirm: () => {
+                onRemove(actualIndex);
+                setConfirmModal(null);
+              },
+              onCancel: () => setConfirmModal(null),
+              type: 'warning',
+            });
+          }}
+          className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition text-sm"
+          title="Remove from queue"
+        >
+          Remove
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Queue() {
+  const navigate = useNavigate();
+  const { 
+    queue, 
+    currentIndex, 
+    currentSong, 
+    removeFromQueue, 
+    setCurrentSong, 
+    currentPlaylist,
+    playNext,
+    reorderQueue,
+  } = usePlayerStore();
+  const { user } = useAuthStore();
+  const [notification, setNotification] = useState(null);
+  const [confirmModal, setConfirmModal] = useState(null);
+  const [playlists, setPlaylists] = useState([]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  useEffect(() => {
+    const loadPlaylists = async () => {
+      try {
+        const data = await playlistsAPI.getAll();
+        setPlaylists(data.playlists);
+      } catch (error) {
+        console.error('Failed to load playlists:', error);
+      }
+    };
+    loadPlaylists();
+  }, []);
+
+  const showNotification = (message, type = 'info') => {
+    setNotification({ message, type });
+  };
+
+  const handlePlaySong = (song, index) => {
+    // When playing a song from the queue:
+    // 1. Play the selected song immediately
+    // 2. Move the currently playing song to be next (right after the selected song)
+    const newQueue = [...queue];
+    
+    // If there's a currently playing song and it's not the one being clicked
+    if (currentSong && currentIndex !== -1 && index !== currentIndex) {
+      // Remove the selected song from its current position
+      const [selectedSong] = newQueue.splice(index, 1);
+      
+      // Calculate where the current song is now (after removing selected song)
+      let currentSongNewIndex = currentIndex;
+      if (index < currentIndex) {
+        // Selected song was before current, so current moved left by 1
+        currentSongNewIndex = currentIndex - 1;
+      }
+      
+      // Remove the current song from its position
+      const [currentPlayingSong] = newQueue.splice(currentSongNewIndex, 1);
+      
+      // Insert selected song at position 0 (where current was)
+      newQueue.splice(0, 0, selectedSong);
+      // Insert current playing song right after selected song (at position 1)
+      newQueue.splice(1, 0, currentPlayingSong);
+      
+      // Update queue and play the selected song at index 0
+      reorderQueue(newQueue);
+      setCurrentSong(selectedSong, currentPlaylist, 0, true);
+    } else {
+      // No current song or clicking on current song, just play the selected one
+      setCurrentSong(song, currentPlaylist, index, true);
+    }
+    
+    showNotification(`Playing "${song.title}"`, 'success');
+  };
+
+  const handlePlayNext = (song, currentIndex) => {
+    // Add to player queue
+    playNext(song);
+    
+    // Find the current playing song's index in the queue
+    const currentSongIndex = queue.findIndex(s => s.id === currentSong?.id);
+    
+    // If we have a current song, move the clicked song right after it
+    if (currentSongIndex !== -1) {
+      const newQueue = [...queue];
+      const [movedSong] = newQueue.splice(currentIndex, 1);
+      // Insert right after current song
+      const targetIndex = currentSongIndex + 1;
+      newQueue.splice(targetIndex, 0, movedSong);
+      
+      // Update the queue order
+      reorderQueue(newQueue);
+      showNotification(`"${song.title}" will play next`, 'success');
+    } else {
+      // No current song, just add to queue
+      showNotification(`"${song.title}" will play next`, 'success');
+    }
+  };
+
+  const handleRemoveFromQueue = (index) => {
+    removeFromQueue(index);
+    showNotification('Song removed from queue', 'success');
+  };
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const upcomingSongs = queue.slice(currentIndex + 1);
+      // Extract song ID from the active/over IDs (format: queue-{songId}-{index})
+      const activeMatch = active.id.toString().match(/queue-([^-]+)-\d+$/);
+      const overMatch = over.id.toString().match(/queue-([^-]+)-\d+$/);
+      
+      if (activeMatch && overMatch) {
+        const activeSongId = activeMatch[1];
+        const overSongId = overMatch[1];
+        const activeIndex = upcomingSongs.findIndex(s => s.id === activeSongId);
+        const overIndex = upcomingSongs.findIndex(s => s.id === overSongId);
+
+        if (activeIndex !== -1 && overIndex !== -1) {
+          const newUpcomingSongs = arrayMove(upcomingSongs, activeIndex, overIndex);
+          const newQueue = [...queue.slice(0, currentIndex + 1), ...newUpcomingSongs];
+          reorderQueue(newQueue);
+          showNotification('Queue reordered', 'success');
+        }
+      }
+    }
+  };
+
+  const upcomingSongs = queue.slice(currentIndex + 1);
+
+  return (
+    <div className="flex h-screen bg-bg-dark">
+      <Sidebar
+        onLogout={() => navigate('/')}
+        username={user?.username}
+        email={user?.email}
+        playlists={playlists}
+        onCreatePlaylist={() => {}}
+        onPlaySong={() => {}}
+        onDeletePlaylist={() => {}}
+        onRefresh={() => {}}
+      />
+      <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <button
+            onClick={() => navigate('/home')}
+            className="mb-4 text-sm sm:text-base text-text-muted hover:text-text-primary transition flex items-center gap-2"
+          >
+            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
+
+          <div className="mb-6 lg:mb-8">
+            <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-2">Queue</h1>
+            <p className="text-sm sm:text-base text-text-muted">
+              {upcomingSongs.length} {upcomingSongs.length === 1 ? 'song' : 'songs'} upcoming
+            </p>
+          </div>
+
+          {currentSong && (
+            <div className="mb-6 p-4 bg-primary/10 border border-primary/30 rounded-xl">
+              <div className="text-xs font-medium text-primary mb-2">Now Playing</div>
+              <div className="flex items-center gap-4">
+                {currentSong.thumbnailUrl && (
+                  <img
+                    src={currentSong.thumbnailUrl}
+                    alt={currentSong.title}
+                    className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-text-primary truncate">{currentSong.title}</div>
+                  <div className="text-sm text-text-muted truncate">
+                    {currentSong.artist || 'Unknown Artist'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {upcomingSongs.length === 0 ? (
+            <div className="text-center text-text-muted py-20">
+              <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-bg-card flex items-center justify-center">
+                <svg className="w-12 h-12 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+              </div>
+              <p className="text-xl font-medium text-text-primary mb-2">Queue is empty</p>
+              <p className="text-text-muted">Add songs to your queue to see them here</p>
+            </div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={upcomingSongs.map((song, idx) => `queue-${song.id}-${currentIndex + 1 + idx}`)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-2">
+                  {upcomingSongs.map((song, idx) => {
+                    const actualIndex = currentIndex + 1 + idx;
+                    const isCurrentlyPlaying = currentSong?.id === song.id;
+                    return (
+                      <SortableQueueItem
+                        key={`${song.id}-${actualIndex}`}
+                        song={song}
+                        index={idx}
+                        actualIndex={actualIndex}
+                        isCurrentlyPlaying={isCurrentlyPlaying}
+                        onPlay={handlePlaySong}
+                        onPlayNext={handlePlayNext}
+                        onRemove={handleRemoveFromQueue}
+                        setConfirmModal={setConfirmModal}
+                      />
+                    );
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+        </div>
+      </div>
+
+      {notification && (
+        <NotificationModal
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
+      )}
+
+      {confirmModal && (
+        <ConfirmModal
+          message={confirmModal.message}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={confirmModal.onCancel}
+          type={confirmModal.type}
+        />
+      )}
+    </div>
+  );
+}
+
+export default Queue;
