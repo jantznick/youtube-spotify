@@ -2,9 +2,19 @@ import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import useAuthStore from '../store/authStore';
 
-const SOCKET_URL = import.meta.env.VITE_API_URL 
-  ? import.meta.env.VITE_API_URL.replace('/api', '')
-  : window.location.origin.replace(':5173', ':3001');
+// Construct Socket.io URL from API URL
+let SOCKET_URL;
+if (import.meta.env.VITE_API_URL) {
+  // Parse the API URL and remove /api if present
+  const apiUrl = import.meta.env.VITE_API_URL;
+  // Remove trailing /api if it exists
+  SOCKET_URL = apiUrl.replace(/\/api\/?$/, '');
+  // Ensure it doesn't have a trailing slash
+  SOCKET_URL = SOCKET_URL.replace(/\/$/, '');
+} else {
+  // Development fallback
+  SOCKET_URL = window.location.origin.replace(':5173', ':3001');
+}
 
 export function useSocket(onConnect, onDisconnect) {
   const socketRef = useRef(null);
