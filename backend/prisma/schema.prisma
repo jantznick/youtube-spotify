@@ -94,3 +94,14 @@ model PasswordResetToken {
   @@index([expiresAt])
   @@index([userId])
 }
+
+// Session table for connect-pg-simple (managed by express-session)
+// This table is created via migration to persist across rebuilds
+model Session {
+  sid    String   @id
+  sess   Json     @db.JsonB
+  expire DateTime @db.Timestamp(6)
+
+  @@map("session")
+  @@index([expire])
+}
