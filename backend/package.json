@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
+    "build": "prisma generate && prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio"
   },
   "keywords": [],

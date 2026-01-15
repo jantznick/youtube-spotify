@@ -1,4 +1,5 @@
-const API_BASE = '/api';
+// Use environment variable if set (for production), otherwise use relative path (for dev/proxy)
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 async function request(endpoint, options = {}) {
   const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -20,26 +21,16 @@ async function request(endpoint, options = {}) {
 
 export const authAPI = {
   register: (usernameOrEmail, password) => {
-    // Determine if it's an email or username
-    const isEmail = usernameOrEmail.includes('@');
-    const body = isEmail 
-      ? { email: usernameOrEmail, password }
-      : { username: usernameOrEmail, password };
     return request('/auth/register', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ usernameOrEmail, password }),
     });
   },
 
   login: (usernameOrEmail, password) => {
-    // Determine if it's an email or username
-    const isEmail = usernameOrEmail.includes('@');
-    const body = isEmail 
-      ? { email: usernameOrEmail, password }
-      : { username: usernameOrEmail, password };
     return request('/auth/login', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ usernameOrEmail, password }),
     });
   },
 

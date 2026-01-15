@@ -44,9 +44,9 @@ setInterval(cleanupExpiredTokens, 5 * 60 * 1000);
 // Register
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { usernameOrEmail, password } = req.body;
 
-    if ((!username && !email) || !password) {
+    if (!usernameOrEmail || !password) {
       return res.status(400).json({ error: 'Username or email and password are required' });
     }
 
@@ -54,10 +54,21 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
+    // Determine if it's an email or username
+    const isEmail = usernameOrEmail.includes('@');
+    
+    // Validate email format if it looks like an email
+    if (isEmail) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(usernameOrEmail)) {
+        return res.status(400).json({ error: 'Please enter a valid email address' });
+      }
+    }
+
     // If email provided, use email only (no username generation)
     // If username provided, use it
-    let finalUsername = username || null;
-    let finalEmail = email || null;
+    let finalUsername = isEmail ? null : usernameOrEmail;
+    let finalEmail = isEmail ? usernameOrEmail : null;
 
     // Check if username already exists (if provided)
     if (finalUsername) {
@@ -115,21 +126,24 @@ router.post('/register', async (req, res) => {
 // Login
 router.post('/login', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { usernameOrEmail, password } = req.body;
 
-    if ((!username && !email) || !password) {
+    if (!usernameOrEmail || !password) {
       return res.status(400).json({ error: 'Username or email and password are required' });
     }
 
+    // Determine if it's an email or username
+    const isEmail = usernameOrEmail.includes('@');
+
     // Find user by username or email
     let user;
-    if (email) {
+    if (isEmail) {
       user = await prisma.user.findUnique({
-        where: { email },
+        where: { email: usernameOrEmail },
       });
     } else {
       user = await prisma.user.findUnique({
-        where: { username },
+        where: { username: usernameOrEmail },
       });
     }
 
@@ -146,7 +160,9 @@ router.post('/login', async (req, res) => {
 
     // Set session
     req.session.userId = user.id;
-    req.session.username = user.username;
+    if (user.username) {
+      req.session.username = user.username;
+    }
 
     res.json({
       user: {
