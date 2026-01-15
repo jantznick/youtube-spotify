@@ -76,13 +76,10 @@ const getVideoMetadata = async (videoId) => {
   }
 };
 
-// Get all songs for the current user
+// Get all songs (global, accessible to all users)
 router.get('/', async (req, res) => {
   try {
-    const userId = req.session.userId;
-
     const songs = await prisma.song.findMany({
-      where: { userId },
       orderBy: {
         createdAt: 'desc',
       },
@@ -98,14 +95,10 @@ router.get('/', async (req, res) => {
 // Get a single song
 router.get('/:id', async (req, res) => {
   try {
-    const userId = req.session.userId;
     const { id } = req.params;
 
-    const song = await prisma.song.findFirst({
-      where: {
-        id,
-        userId,
-      },
+    const song = await prisma.song.findUnique({
+      where: { id },
     });
 
     if (!song) {
@@ -119,81 +112,24 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Add a new song
-router.post('/', async (req, res) => {
-  try {
-    const userId = req.session.userId;
-    let { title, artist, youtubeId, youtubeUrl, thumbnailUrl, duration } = req.body;
 
-    // Extract video ID from URL if provided
-    if (youtubeUrl && !youtubeId) {
-      youtubeId = extractVideoId(youtubeUrl);
-    }
-
-    if (!youtubeId) {
-      return res.status(400).json({ error: 'YouTube ID or URL is required' });
-    }
-
-    // Check if song already exists for this user
-    const existingSong = await prisma.song.findFirst({
-      where: {
-        userId,
-        youtubeId,
-      },
-    });
-
-    if (existingSong) {
-      return res.status(400).json({ error: 'Song already exists in your library' });
-    }
-
-    // Fetch metadata from YouTube if not provided
-    let metadata = null;
-    if (!title || !artist || !duration || !thumbnailUrl) {
-      metadata = await getVideoMetadata(youtubeId);
-    }
-
-    // Use provided values or fall back to metadata
-    const finalTitle = title || metadata?.title || 'Untitled';
-    const finalArtist = artist || metadata?.artist || null;
-    const finalDuration = duration ? parseInt(duration) : (metadata?.duration || null);
-    const finalThumbnail = thumbnailUrl || metadata?.thumbnailUrl || `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`;
-
-    const song = await prisma.song.create({
-      data: {
-        title: finalTitle,
-        artist: finalArtist,
-        youtubeId,
-        thumbnailUrl: finalThumbnail,
-        duration: finalDuration,
-        userId,
-      },
-    });
-
-    res.status(201).json({ song });
-  } catch (error) {
-    console.error('Create song error:', error);
-    res.status(500).json({ error: 'Failed to create song' });
-  }
-});
-
-// Update a song
+// Update a song (global update, affects all users)
 router.put('/:id', async (req, res) => {
   try {
     const userId = req.session.userId;
     const { id } = req.params;
     const { title, artist, thumbnailUrl, duration } = req.body;
 
-    const song = await prisma.song.findFirst({
-      where: {
-        id,
-        userId,
-      },
+    // Verify song exists
+    const song = await prisma.song.findUnique({
+      where: { id },
     });
 
     if (!song) {
       return res.status(404).json({ error: 'Song not found' });
     }
 
+    // Update the global song
     const updatedSong = await prisma.song.update({
       where: { id },
       data: {
@@ -211,32 +147,5 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete a song
-router.delete('/:id', async (req, res) => {
-  try {
-    const userId = req.session.userId;
-    const { id } = req.params;
-
-    const song = await prisma.song.findFirst({
-      where: {
-        id,
-        userId,
-      },
-    });
-
-    if (!song) {
-      return res.status(404).json({ error: 'Song not found' });
-    }
-
-    await prisma.song.delete({
-      where: { id },
-    });
-
-    res.json({ message: 'Song deleted successfully' });
-  } catch (error) {
-    console.error('Delete song error:', error);
-    res.status(500).json({ error: 'Failed to delete song' });
-  }
-});
 
 export default router;

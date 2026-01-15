@@ -1,8 +1,4 @@
-import { useState } from 'react';
-import ConfirmModal from './ConfirmModal';
-
-function SongList({ songs, onPlay, onDelete }) {
-  const [confirmModal, setConfirmModal] = useState(null);
+function SongList({ songs, onPlay }) {
   if (songs.length === 0) {
     return (
       <div className="text-center text-text-muted py-20">
@@ -11,8 +7,8 @@ function SongList({ songs, onPlay, onDelete }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
           </svg>
         </div>
-        <p className="text-xl font-medium text-text-primary mb-2">No songs in your library</p>
-        <p className="text-text-muted">Add a song to get started!</p>
+        <p className="text-xl font-medium text-text-primary mb-2">No songs available</p>
+        <p className="text-text-muted">Songs will appear here once playlists are imported</p>
       </div>
     );
   }
@@ -53,38 +49,12 @@ function SongList({ songs, onPlay, onDelete }) {
             </div>
           </div>
           <div className="font-semibold text-text-primary truncate mb-1">{song.title}</div>
-          <div className="text-sm text-text-muted truncate mb-3">
+          <div className="text-sm text-text-muted truncate">
             {song.artist || 'Unknown Artist'}
           </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirmModal({
-                message: 'Are you sure you want to delete this song?',
-                onConfirm: () => {
-                  onDelete(song.id);
-                  setConfirmModal(null);
-                },
-                onCancel: () => setConfirmModal(null),
-                type: 'danger',
-              });
-            }}
-            className="text-red-400 hover:text-red-300 text-sm font-medium transition-colors"
-          >
-            Delete
-          </button>
         </div>
         ))}
       </div>
-
-      {confirmModal && (
-        <ConfirmModal
-          message={confirmModal.message}
-          onConfirm={confirmModal.onConfirm}
-          onCancel={confirmModal.onCancel}
-          type={confirmModal.type}
-        />
-      )}
     </>
   );
 }

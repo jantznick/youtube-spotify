@@ -7,7 +7,7 @@ import useAuthStore from '../store/authStore';
 import NotificationModal from './NotificationModal';
 import ConfirmModal from './ConfirmModal';
 
-function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlaylist, onPlaySong, onDeletePlaylist, onRefresh }) {
+function Sidebar({ onLogout, username, playlists, onCreatePlaylist, onPlaySong, onDeletePlaylist, onRefresh }) {
   const navigate = useNavigate();
   const { setCurrentSong, setQueue, currentSong, currentPlaylist, isPlaying, togglePlay } = usePlayerStore();
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] = useState(false);
@@ -127,18 +127,6 @@ function Sidebar({ onLogout, username, playlists, songs, onAddSong, onCreatePlay
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-text-primary">My Library</span>
-          <button
-            onClick={onAddSong}
-            className="w-7 h-7 rounded-md bg-primary/20 hover:bg-primary/30 text-primary flex items-center justify-center transition-colors"
-            title="Add Song"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
           </button>
         </div>

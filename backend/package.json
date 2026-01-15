@@ -5,12 +5,14 @@
   "main": "server.js",
   "scripts": {
     "dev": "node --watch server.js",
-    "start": "npx prisma migrate deploy 2>&1 || (echo 'Migration failed, checking status...' && npx prisma migrate status && exit 1); node server.js",
+    "start": "node scripts/safe-migrate.js && node server.js",
     "build": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "backfill:source-type": "node scripts/backfill-source-type.js",
+    "fix:session": "node scripts/fix-session-table.js"
   },
   "keywords": [],
   "author": "",

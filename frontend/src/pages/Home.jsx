@@ -5,14 +5,12 @@ import usePlayerStore from '../store/playerStore';
 import { authAPI, songsAPI, playlistsAPI } from '../api/api';
 import Sidebar from '../components/Sidebar';
 import SongList from '../components/SongList';
-import AddSongModal from '../components/AddSongModal';
 import NotificationModal from '../components/NotificationModal';
 
 function Home() {
   const [songs, setSongs] = useState([]);
   const [playlists, setPlaylists] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAddSong, setShowAddSong] = useState(false);
   const [notification, setNotification] = useState(null);
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
@@ -51,25 +49,6 @@ function Home() {
     }
   };
 
-  const handleAddSong = async (songData) => {
-    try {
-      const newSong = await songsAPI.create(songData);
-      setSongs((prev) => [newSong.song, ...prev]);
-      setShowAddSong(false);
-    } catch (error) {
-      console.error('Failed to add song:', error);
-      throw error;
-    }
-  };
-
-  const handleDeleteSong = async (songId) => {
-    try {
-      await songsAPI.delete(songId);
-      setSongs((prev) => prev.filter((s) => s.id !== songId));
-    } catch (error) {
-      console.error('Failed to delete song:', error);
-    }
-  };
 
   const handlePlaySong = (song) => {
     // Set queue to all songs and find the index of the current song
@@ -112,8 +91,6 @@ function Home() {
         username={user?.username}
         email={user?.email}
         playlists={playlists}
-        songs={songs}
-        onAddSong={() => setShowAddSong(true)}
         onCreatePlaylist={handleCreatePlaylist}
         onPlaySong={handlePlaySong}
         onDeletePlaylist={handleDeletePlaylist}
@@ -121,51 +98,21 @@ function Home() {
       />
       <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="mb-6 lg:mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-2">
-                My Library
-              </h1>
-              <p className="text-sm sm:text-base text-text-muted">
-                {songs.length} {songs.length === 1 ? 'song' : 'songs'} in your collection
-              </p>
-            </div>
-            <button
-              onClick={() => setShowAddSong(true)}
-              className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl hover:shadow-lg hover:shadow-primary/30 transition-all font-medium flex items-center justify-center gap-2 text-sm sm:text-base"
-            >
-              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add Song
-            </button>
+          <div className="mb-6 lg:mb-8">
+            <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-2">
+              All Songs
+            </h1>
+            <p className="text-sm sm:text-base text-text-muted">
+              {songs.length} {songs.length === 1 ? 'song' : 'songs'} available
+            </p>
           </div>
 
           <SongList
             songs={songs}
             onPlay={handlePlaySong}
-            onDelete={handleDeleteSong}
           />
         </div>
       </div>
-
-      {showAddSong && (
-        <AddSongModal
-          onClose={() => setShowAddSong(false)}
-          onAdd={handleAddSong}
-          onImportPlaylist={async (url, name) => {
-            try {
-              await playlistsAPI.importYouTube(url, name);
-              await loadData();
-              showNotification('Playlist import started! Songs will be added in the background.', 'success');
-            } catch (error) {
-              console.error('Failed to import playlist:', error);
-              showNotification(error.message || 'Failed to start playlist import', 'error');
-              throw error;
-            }
-          }}
-        />
-      )}
 
       {notification && (
         <NotificationModal

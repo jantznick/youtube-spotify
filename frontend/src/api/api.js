@@ -85,19 +85,10 @@ export const authAPI = {
 export const songsAPI = {
   getAll: () => request('/songs'),
   getOne: (id) => request(`/songs/${id}`),
-  create: (songData) =>
-    request('/songs', {
-      method: 'POST',
-      body: JSON.stringify(songData),
-    }),
   update: (id, songData) =>
     request(`/songs/${id}`, {
       method: 'PUT',
       body: JSON.stringify(songData),
-    }),
-  delete: (id) =>
-    request(`/songs/${id}`, {
-      method: 'DELETE',
     }),
 };
 

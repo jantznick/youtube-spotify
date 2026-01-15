@@ -17,7 +17,6 @@ function Playlist() {
   const [playlists, setPlaylists] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddSongModal, setShowAddSongModal] = useState(false);
-  const [showAddSongToLibraryModal, setShowAddSongToLibraryModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [notification, setNotification] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
@@ -169,8 +168,6 @@ function Playlist() {
         username={user?.username}
         email={user?.email}
         playlists={playlists}
-        songs={allSongs}
-        onAddSong={() => setShowAddSongToLibraryModal(true)}
         onCreatePlaylist={() => {}}
         onPlaySong={handlePlaySong}
         onDeletePlaylist={() => {}}
@@ -250,7 +247,7 @@ function Playlist() {
                   </svg>
                   <span className="hidden sm:inline">Settings</span>
                 </button>
-                {!playlist.sourceUrl && (
+                {!playlist.sourceType && (
                   <button
                     onClick={() => setShowAddSongModal(true)}
                     className="w-full sm:w-auto px-4 sm:px-6 py-3 sm:py-4 bg-bg-card border border-border text-text-primary rounded-xl hover:bg-bg-hover transition-all font-medium flex items-center justify-center gap-2 text-sm sm:text-base"
@@ -349,7 +346,7 @@ function Playlist() {
                 </svg>
               </div>
               <p className="text-xl font-medium text-text-primary mb-2">No songs in this playlist</p>
-              {!playlist.sourceUrl ? (
+              {!playlist.sourceType ? (
                 <>
                   <p className="text-text-muted mb-4">Add songs to get started!</p>
                   <button
@@ -440,34 +437,6 @@ function Playlist() {
         />
       )}
 
-      {showAddSongToLibraryModal && (
-        <AddSongModal
-          onClose={() => setShowAddSongToLibraryModal(false)}
-          onAdd={async (songData) => {
-            try {
-              const newSong = await songsAPI.create(songData);
-              setAllSongs((prev) => [newSong.song, ...prev]);
-              setShowAddSongToLibraryModal(false);
-              showNotification('Song added to library!', 'success');
-            } catch (error) {
-              console.error('Failed to add song:', error);
-              showNotification('Failed to add song to library', 'error');
-              throw error;
-            }
-          }}
-          onImportPlaylist={async (url, name) => {
-            try {
-              await playlistsAPI.importYouTube(url, name);
-              await loadData();
-              showNotification('Playlist import started! Songs will be added in the background.', 'success');
-            } catch (error) {
-              console.error('Failed to import playlist:', error);
-              showNotification(error.message || 'Failed to start playlist import', 'error');
-              throw error;
-            }
-          }}
-        />
-      )}
       {showSettingsModal && playlist && (
         <PlaylistSettingsModal
           playlist={playlist}

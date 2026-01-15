@@ -561,12 +561,9 @@ router.post('/:id/songs', async (req, res) => {
       return res.status(404).json({ error: 'Playlist not found' });
     }
 
-    // Verify song belongs to user
-    const song = await prisma.song.findFirst({
-      where: {
-        id: songId,
-        userId,
-      },
+    // Verify song exists (songs are global, no userId check needed)
+    const song = await prisma.song.findUnique({
+      where: { id: songId },
     });
 
     if (!song) {
@@ -993,15 +990,12 @@ async function importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl)
     for (let i = 0; i < videoIds.length; i++) {
       const videoId = videoIds[i];
       try {
-        // Check if song already exists
-        let song = await prisma.song.findFirst({
-          where: {
-            userId,
-            youtubeId: videoId,
-          },
+        // Check if song already exists globally (by youtubeId)
+        let song = await prisma.song.findUnique({
+          where: { youtubeId: videoId },
         });
 
-        // Create song if it doesn't exist
+        // Create song if it doesn't exist globally
         if (!song) {
           const metadata = await getVideoMetadata(videoId);
           
@@ -1012,7 +1006,6 @@ async function importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl)
               youtubeId: videoId,
               thumbnailUrl: metadata?.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
               duration: metadata?.duration || null,
-              userId,
             },
           });
         }
@@ -1125,19 +1118,25 @@ async function refreshYouTubePlaylistAsync(playlistId, userId, youtubePlaylistId
     
     console.log(`Starting refresh of ${videoIds.length} songs for playlist: ${playlistId}`);
 
-    // Import each video as a song and add to playlist
+    // Step 1: Get existing playlist songs
+    const existingPlaylistSongs = await prisma.playlistSong.findMany({
+      where: { playlistId },
+      include: { song: true },
+      orderBy: { position: 'asc' },
+    });
+    const existingVideoIds = new Set(existingPlaylistSongs.map(ps => ps.song.youtubeId));
+
+    // Step 2: Process new songs from source
+    const newSongIds = [];
     for (let i = 0; i < videoIds.length; i++) {
       const videoId = videoIds[i];
       try {
-        // Check if song already exists
-        let song = await prisma.song.findFirst({
-          where: {
-            userId,
-            youtubeId: videoId,
-          },
+        // Check if song already exists globally (by youtubeId)
+        let song = await prisma.song.findUnique({
+          where: { youtubeId: videoId },
         });
 
-        // Create song if it doesn't exist
+        // Create song if it doesn't exist globally
         if (!song) {
           const metadata = await getVideoMetadata(videoId);
           
@@ -1148,12 +1147,13 @@ async function refreshYouTubePlaylistAsync(playlistId, userId, youtubePlaylistId
               youtubeId: videoId,
               thumbnailUrl: metadata?.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
               duration: metadata?.duration || null,
-              userId,
             },
           });
         }
 
-        // Add song to playlist (check if already exists)
+        newSongIds.push(song.id);
+
+        // Add or update song in playlist
         const existing = await prisma.playlistSong.findUnique({
           where: {
             playlistId_songId: {
@@ -1163,7 +1163,16 @@ async function refreshYouTubePlaylistAsync(playlistId, userId, youtubePlaylistId
           },
         });
 
-        if (!existing) {
+        if (existing) {
+          // Update position if it changed
+          if (existing.position !== i) {
+            await prisma.playlistSong.update({
+              where: { id: existing.id },
+              data: { position: i },
+            });
+          }
+        } else {
+          // Add new song to playlist
           await prisma.playlistSong.create({
             data: {
               playlistId: playlistId,
@@ -1174,6 +1183,34 @@ async function refreshYouTubePlaylistAsync(playlistId, userId, youtubePlaylistId
         }
       } catch (error) {
         console.error(`Error importing video ${videoId}:`, error);
+      }
+    }
+
+    // Step 3: Remove songs that are no longer in the source
+    const songsToRemove = existingPlaylistSongs.filter(ps => !newSongIds.includes(ps.songId));
+    if (songsToRemove.length > 0) {
+      await prisma.playlistSong.deleteMany({
+        where: {
+          playlistId: playlistId,
+          songId: {
+            in: songsToRemove.map(ps => ps.songId),
+          },
+        },
+      });
+      console.log(`Removed ${songsToRemove.length} songs that are no longer in source`);
+    }
+
+    // Step 4: Reorder positions to be sequential
+    const finalPlaylistSongs = await prisma.playlistSong.findMany({
+      where: { playlistId },
+      orderBy: { position: 'asc' },
+    });
+    for (let i = 0; i < finalPlaylistSongs.length; i++) {
+      if (finalPlaylistSongs[i].position !== i) {
+        await prisma.playlistSong.update({
+          where: { id: finalPlaylistSongs[i].id },
+          data: { position: i },
+        });
       }
     }
 
@@ -1198,7 +1235,15 @@ async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
     
     console.log(`Starting refresh of ${spotifyData.songs.length} songs for playlist: ${playlistId}`);
 
-    // For each song, search YouTube and add to playlist
+    // Step 1: Get existing playlist songs
+    const existingPlaylistSongs = await prisma.playlistSong.findMany({
+      where: { playlistId },
+      include: { song: true },
+      orderBy: { position: 'asc' },
+    });
+
+    // Step 2: Process new songs from source
+    const newSongIds = [];
     for (let i = 0; i < spotifyData.songs.length; i++) {
       const spotifySong = spotifyData.songs[i];
       try {
@@ -1210,15 +1255,12 @@ async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
           continue;
         }
         
-        // Check if song already exists
-        let song = await prisma.song.findFirst({
-          where: {
-            userId,
-            youtubeId: videoId,
-          },
+        // Check if song already exists globally (by youtubeId)
+        let song = await prisma.song.findUnique({
+          where: { youtubeId: videoId },
         });
 
-        // Create song if it doesn't exist
+        // Create song if it doesn't exist globally
         if (!song) {
           const metadata = await getVideoMetadata(videoId);
           
@@ -1229,12 +1271,13 @@ async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
               youtubeId: videoId,
               thumbnailUrl: metadata?.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
               duration: metadata?.duration || null,
-              userId,
             },
           });
         }
 
-        // Add song to playlist (check if already exists)
+        newSongIds.push(song.id);
+
+        // Add or update song in playlist
         const existing = await prisma.playlistSong.findUnique({
           where: {
             playlistId_songId: {
@@ -1244,7 +1287,16 @@ async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
           },
         });
 
-        if (!existing) {
+        if (existing) {
+          // Update position if it changed
+          if (existing.position !== i) {
+            await prisma.playlistSong.update({
+              where: { id: existing.id },
+              data: { position: i },
+            });
+          }
+        } else {
+          // Add new song to playlist
           await prisma.playlistSong.create({
             data: {
               playlistId: playlistId,
@@ -1257,6 +1309,34 @@ async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
         console.log(`Refreshed ${i + 1}/${spotifyData.songs.length}: ${spotifySong.title}`);
       } catch (error) {
         console.error(`Error importing song "${spotifySong.title}":`, error);
+      }
+    }
+
+    // Step 3: Remove songs that are no longer in the source
+    const songsToRemove = existingPlaylistSongs.filter(ps => !newSongIds.includes(ps.songId));
+    if (songsToRemove.length > 0) {
+      await prisma.playlistSong.deleteMany({
+        where: {
+          playlistId: playlistId,
+          songId: {
+            in: songsToRemove.map(ps => ps.songId),
+          },
+        },
+      });
+      console.log(`Removed ${songsToRemove.length} songs that are no longer in source`);
+    }
+
+    // Step 4: Reorder positions to be sequential
+    const finalPlaylistSongs = await prisma.playlistSong.findMany({
+      where: { playlistId },
+      orderBy: { position: 'asc' },
+    });
+    for (let i = 0; i < finalPlaylistSongs.length; i++) {
+      if (finalPlaylistSongs[i].position !== i) {
+        await prisma.playlistSong.update({
+          where: { id: finalPlaylistSongs[i].id },
+          data: { position: i },
+        });
       }
     }
 
@@ -1321,15 +1401,12 @@ async function importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName) {
           continue;
         }
         
-        // Check if song already exists
-        let song = await prisma.song.findFirst({
-          where: {
-            userId,
-            youtubeId: videoId,
-          },
+        // Check if song already exists globally (by youtubeId)
+        let song = await prisma.song.findUnique({
+          where: { youtubeId: videoId },
         });
 
-        // Create song if it doesn't exist
+        // Create song if it doesn't exist globally
         if (!song) {
           const metadata = await getVideoMetadata(videoId);
           
@@ -1340,7 +1417,6 @@ async function importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName) {
               youtubeId: videoId,
               thumbnailUrl: metadata?.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
               duration: metadata?.duration || null,
-              userId,
             },
           });
         }
