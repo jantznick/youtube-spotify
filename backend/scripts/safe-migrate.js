@@ -20,45 +20,45 @@ function safeMigrate() {
       console.warn('⚠️  userId removal had warnings, continuing...');
     }
 
+    // Step 1.6: Complete the failed make_songs_global migration
+    console.log('📋 Step 1.6: Completing failed make_songs_global migration...');
+    try {
+      execSync('node scripts/complete-make-songs-global.js', { stdio: 'inherit' });
+    } catch (error) {
+      console.warn('⚠️  Migration completion had warnings, continuing...');
+    }
+
     // Check for failed migrations and resolve them
     console.log('📋 Step 2: Checking for failed migrations...');
     
-    // Always try to resolve the known failed migration first (since status check often fails when there's a failed migration)
-    // The session table already exists and is correct (from Step 1), so we can safely mark it as applied
-    try {
-      console.log('📋 Attempting to resolve failed session table migration...');
-      execSync('npx prisma migrate resolve --applied 20260116000000_add_session_table', { 
-        stdio: 'pipe',
-        encoding: 'utf-8'
-      });
-      console.log('✅ Failed migration resolved');
-    } catch (resolveError) {
-      // If resolve fails, the migration might not be in failed state, or it might already be resolved
-      // Try to check status to see what's happening
+    // Always try to resolve the known failed migrations first
+    // 1. Session table migration (already fixed)
+    // 2. make_songs_global migration (already completed manually)
+    const failedMigrations = [
+      '20260116000000_add_session_table',
+      '20260121000000_make_songs_global'
+    ];
+
+    for (const migrationName of failedMigrations) {
       try {
-        const statusOutput = execSync('npx prisma migrate status', { 
-          encoding: 'utf-8',
-          stdio: 'pipe'
+        console.log(`📋 Attempting to resolve failed migration: ${migrationName}...`);
+        execSync(`npx prisma migrate resolve --applied ${migrationName}`, { 
+          stdio: 'pipe',
+          encoding: 'utf-8'
         });
-        
-        // Check if there are still failed migrations
-        if (statusOutput.includes('failed') || statusOutput.includes('P3009')) {
-          console.log('⚠️  Still detecting failed migrations, trying rolled-back...');
-          try {
-            execSync('npx prisma migrate resolve --rolled-back 20260116000000_add_session_table', { 
-              stdio: 'pipe',
-              encoding: 'utf-8'
-            });
-            console.log('✅ Failed migration marked as rolled back');
-          } catch (rollbackError) {
-            console.warn('⚠️  Could not resolve failed migration automatically');
-          }
-        } else {
-          console.log('✅ No failed migrations detected');
+        console.log(`✅ Migration ${migrationName} resolved`);
+      } catch (resolveError) {
+        // If resolve fails, try rolled-back
+        try {
+          console.log(`📋 Trying to mark ${migrationName} as rolled back...`);
+          execSync(`npx prisma migrate resolve --rolled-back ${migrationName}`, { 
+            stdio: 'pipe',
+            encoding: 'utf-8'
+          });
+          console.log(`✅ Migration ${migrationName} marked as rolled back`);
+        } catch (rollbackError) {
+          console.warn(`⚠️  Could not resolve ${migrationName} automatically`);
         }
-      } catch (statusError) {
-        // Status check failed, but we tried to resolve anyway, so continue
-        console.warn('⚠️  Could not check migration status, but attempted resolution');
       }
     }
 
