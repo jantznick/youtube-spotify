@@ -40,7 +40,8 @@ app.use(session({
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: process.env.COOKIE_SAME_SITE || 'lax', // 'lax' for same-site subdomains, 'none' for cross-domain
+    domain: process.env.COOKIE_DOMAIN || (process.env.NODE_ENV === 'production' ? '.musicdocks.com' : undefined), // Share cookies across subdomains
     maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
   },
 }));

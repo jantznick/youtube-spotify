@@ -28,7 +28,7 @@ export async function sendMagicTokenLoginEmail(email, username, sixDigitCode, lo
             </div>
             <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb;">
               <h2 style="color: #1f2937; margin-top: 0;">Your Login Code</h2>
-              <p style="color: #4b5563; font-size: 16px;">Hi ${username},</p>
+              <p style="color: #4b5563; font-size: 16px;">Hi ${username || email || 'there'},</p>
               <p style="color: #4b5563; font-size: 16px;">Use this code to sign in to your MusicDocks account:</p>
               
               <div style="background: white; border: 2px solid #667eea; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
@@ -100,8 +100,8 @@ export async function sendMagicTokenRegisterEmail(email, username, sixDigitCode,
             </div>
             <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb;">
               <h2 style="color: #1f2937; margin-top: 0;">Complete Your Registration</h2>
-              <p style="color: #4b5563; font-size: 16px;">Hi there,</p>
-              <p style="color: #4b5563; font-size: 16px;">You're almost done! Use this code to complete your MusicDocks account registration for <strong>${username}</strong>:</p>
+              <p style="color: #4b5563; font-size: 16px;">Hi ${username || email || 'there'},</p>
+              <p style="color: #4b5563; font-size: 16px;">You're almost done! Use this code to complete your MusicDocks account registration for <strong>${username || email}</strong>:</p>
               
               <div style="background: white; border: 2px solid #667eea; border-radius: 8px; padding: 20px; text-align: center; margin: 30px 0;">
                 <div style="font-size: 36px; font-weight: bold; color: #667eea; letter-spacing: 8px; font-family: 'Courier New', monospace;">
@@ -172,7 +172,7 @@ export async function sendPasswordResetEmail(email, username, resetLink) {
             </div>
             <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb;">
               <h2 style="color: #1f2937; margin-top: 0;">Reset Your Password</h2>
-              <p style="color: #4b5563; font-size: 16px;">Hi ${username},</p>
+              <p style="color: #4b5563; font-size: 16px;">Hi ${username || email || 'there'},</p>
               <p style="color: #4b5563; font-size: 16px;">We received a request to reset your password for your MusicDocks account. Click the button below to create a new password:</p>
               
               <div style="text-align: center; margin: 30px 0;">
@@ -196,7 +196,7 @@ export async function sendPasswordResetEmail(email, username, resetLink) {
       text: `
         Reset Your MusicDocks Password
 
-        Hi ${username},
+        Hi ${username || email || 'there'},
 
         We received a request to reset your password for your MusicDocks account. Click the link below to create a new password:
 
