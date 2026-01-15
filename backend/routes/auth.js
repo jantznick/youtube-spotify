@@ -163,6 +163,13 @@ router.post('/login', async (req, res) => {
     if (user.username) {
       req.session.username = user.username;
     }
+    
+    // Explicitly save session to ensure cookie is set
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+      }
+    });
 
     res.json({
       user: {
@@ -540,6 +547,13 @@ router.post('/magic-token/register', async (req, res) => {
     if (user.username) {
       req.session.username = user.username;
     }
+    
+    // Explicitly save session to ensure cookie is set
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+      }
+    });
 
     res.json({
       user: {
@@ -592,6 +606,13 @@ router.post('/magic-token/login', async (req, res) => {
     // Set session
     req.session.userId = magicToken.user.id;
     req.session.username = magicToken.user.username;
+    
+    // Explicitly save session to ensure cookie is set
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+      }
+    });
 
     // Delete used token
     await prisma.magicToken.delete({
