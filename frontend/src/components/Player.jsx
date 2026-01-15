@@ -25,8 +25,16 @@ function Player() {
 
     try {
       if (isPlaying) {
-        playerRef.current.playVideo();
-        setShowToast(true);
+        // Check player state before playing
+        const playerState = playerRef.current.getPlayerState();
+        // Only play if player is in a playable state
+        if (playerState === window.YT.PlayerState.UNSTARTED || 
+            playerState === window.YT.PlayerState.CUED ||
+            playerState === window.YT.PlayerState.PAUSED ||
+            playerState === window.YT.PlayerState.BUFFERING) {
+          playerRef.current.playVideo();
+          setShowToast(true);
+        }
       } else {
         playerRef.current.pauseVideo();
       }
@@ -65,17 +73,35 @@ function Player() {
 
   const handleReady = (event) => {
     playerRef.current = event.target;
-    // Autoplay if isPlaying is true (which it should be when a new song is set)
-    if (isPlaying) {
-      // Small delay to ensure player is fully ready
-      setTimeout(() => {
-        try {
+    // Always try to autoplay when player is ready
+    // Check store state directly to avoid stale closure issues
+    const tryPlay = () => {
+      try {
+        const storeState = playerStore.getState();
+        const playerState = event.target.getPlayerState();
+        
+        // Play if isPlaying is true and player is in a playable state
+        if (storeState.isPlaying && 
+            (playerState === window.YT.PlayerState.UNSTARTED || 
+             playerState === window.YT.PlayerState.CUED ||
+             playerState === window.YT.PlayerState.PAUSED)) {
           event.target.playVideo();
-        } catch (error) {
-          console.error('Error playing video on ready:', error);
+          console.log('[Player] Autoplaying video on ready, isPlaying:', storeState.isPlaying);
+        } else if (playerState === window.YT.PlayerState.PLAYING) {
+          // Already playing, do nothing
+          console.log('[Player] Video already playing');
+        } else {
+          console.log('[Player] Not autoplaying - isPlaying:', storeState.isPlaying, 'playerState:', playerState);
         }
-      }, 100);
-    }
+      } catch (error) {
+        console.error('Error playing video on ready:', error);
+      }
+    };
+
+    // Try immediately
+    tryPlay();
+    // Also try after a short delay as fallback (in case store state hasn't updated yet)
+    setTimeout(tryPlay, 300);
   };
 
   const handleStateChange = (event) => {
@@ -94,22 +120,39 @@ function Player() {
 
   // Show toast and autoplay when song changes
   useEffect(() => {
-    if (currentSong && playerRef.current) {
+    if (currentSong) {
       setShowToast(true);
       setIsMinimized(false);
-      // Ensure video plays when song changes
-      try {
-        // Small delay to ensure player is ready
-        setTimeout(() => {
-          if (playerRef.current && isPlaying) {
-            playerRef.current.playVideo();
+      
+      // When song changes, the YouTube component will remount (due to key prop)
+      // The handleReady callback will handle autoplay when the new player is ready
+      // But also try to play if player is already ready (for same video or edge cases)
+      const tryPlayCurrent = () => {
+        if (playerRef.current) {
+          try {
+            const storeState = playerStore.getState();
+            // Only play if isPlaying is true in the store
+            if (storeState.isPlaying && storeState.currentSong?.youtubeId === currentSong.youtubeId) {
+              const playerState = playerRef.current.getPlayerState();
+              // Only try to play if player is in a state where it can play
+              if (playerState === window.YT.PlayerState.UNSTARTED || 
+                  playerState === window.YT.PlayerState.CUED ||
+                  playerState === window.YT.PlayerState.PAUSED) {
+                playerRef.current.playVideo();
+                console.log('[Player] Autoplaying on song change');
+              }
+            }
+          } catch (error) {
+            // Player might not be ready yet, that's okay - handleReady will handle it
+            console.log('Player not ready yet, will play on ready');
           }
-        }, 100);
-      } catch (error) {
-        console.error('Error autoplaying on song change:', error);
-      }
+        }
+      };
+
+      // Try after a short delay to allow component to update
+      setTimeout(tryPlayCurrent, 100);
     }
-  }, [currentSong, isPlaying]);
+  }, [currentSong]);
 
   if (!currentSong) {
     return null;
