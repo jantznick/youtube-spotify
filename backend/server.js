@@ -77,15 +77,37 @@ app.use((req, res, next) => {
       } : 'no session',
     });
     
-    // Intercept response to log headers
+    // Intercept response to log headers - check multiple times
     const originalEnd = res.end;
+    const originalJson = res.json;
+    
+    // Intercept json to check headers before response is sent
+    res.json = function(body) {
+      const headersBefore = res.getHeaders();
+      console.log('[DEBUG] Headers before json() completes:', headersBefore);
+      console.log('[DEBUG] Set-Cookie before json():', res.getHeader('Set-Cookie'));
+      const result = originalJson.call(this, body);
+      // Check again after
+      setTimeout(() => {
+        console.log('[DEBUG] Headers after json() (delayed):', res.getHeaders());
+        console.log('[DEBUG] Set-Cookie after json() (delayed):', res.getHeader('Set-Cookie'));
+      }, 50);
+      return result;
+    };
+    
     res.end = function(chunk, encoding) {
       console.log('[DEBUG] Response status:', res.statusCode);
-      console.log('[DEBUG] Response headers:', res.getHeaders());
+      const allHeaders = res.getHeaders();
+      console.log('[DEBUG] Response headers in res.end():', allHeaders);
       const setCookie = res.getHeader('Set-Cookie');
-      console.log('[DEBUG] Set-Cookie header:', setCookie);
+      console.log('[DEBUG] Set-Cookie header in res.end():', setCookie);
       if (!setCookie) {
         console.error('[DEBUG] WARNING: No Set-Cookie header in response!');
+        console.error('[DEBUG] Session state:', {
+          sessionID: req.sessionID,
+          userId: req.session?.userId,
+          cookie: req.session?.cookie,
+        });
       }
       return originalEnd.call(this, chunk, encoding);
     };

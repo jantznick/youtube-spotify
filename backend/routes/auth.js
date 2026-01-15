@@ -183,35 +183,30 @@ router.post('/login', async (req, res) => {
       sessionID: req.sessionID,
     });
     
-    // Save session and wait for it to complete before sending response
-    await new Promise((resolve, reject) => {
-      req.session.save((err) => {
-        if (err) {
-          console.error('[LOGIN] Session save error:', err);
-          reject(err);
-        } else {
-          console.log('[LOGIN] Session saved successfully, sessionID:', req.sessionID);
-          console.log('[LOGIN] Cookie config:', {
-            domain: req.session.cookie.domain,
-            secure: req.session.cookie.secure,
-            sameSite: req.session.cookie.sameSite,
-            httpOnly: req.session.cookie.httpOnly,
-            maxAge: req.session.cookie.maxAge,
-          });
-          resolve();
-        }
+    // Save session and send response INSIDE the callback (like parlay-streak)
+    req.session.save((err) => {
+      if (err) {
+        console.error('[LOGIN] Session save error:', err);
+        return res.status(500).json({ error: 'Failed to save session' });
+      }
+      
+      console.log('[LOGIN] Session saved successfully, sessionID:', req.sessionID);
+      console.log('[LOGIN] Cookie config:', {
+        domain: req.session.cookie.domain,
+        secure: req.session.cookie.secure,
+        sameSite: req.session.cookie.sameSite,
+        httpOnly: req.session.cookie.httpOnly,
+        maxAge: req.session.cookie.maxAge,
+      });
+      
+      res.json({
+        user: {
+          id: user.id,
+          username: user.username,
+          createdAt: user.createdAt,
+        },
       });
     });
-
-    console.log('[LOGIN] Sending response, checking headers...');
-    res.json({
-      user: {
-        id: user.id,
-        username: user.username,
-        createdAt: user.createdAt,
-      },
-    });
-    console.log('[LOGIN] Response sent, headers:', res.getHeaders());
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Failed to login' });
@@ -601,36 +596,31 @@ router.post('/magic-token/register', async (req, res) => {
       sessionID: req.sessionID,
     });
     
-    // Save session and wait for it to complete before sending response
-    await new Promise((resolve, reject) => {
-      req.session.save((err) => {
-        if (err) {
-          console.error('[MAGIC-TOKEN-REGISTER] Session save error:', err);
-          reject(err);
-        } else {
-          console.log('[MAGIC-TOKEN-REGISTER] Session saved successfully, sessionID:', req.sessionID);
-          console.log('[MAGIC-TOKEN-REGISTER] Cookie config:', {
-            domain: req.session.cookie.domain,
-            secure: req.session.cookie.secure,
-            sameSite: req.session.cookie.sameSite,
-            httpOnly: req.session.cookie.httpOnly,
-            maxAge: req.session.cookie.maxAge,
-          });
-          resolve();
-        }
+    // Save session and send response INSIDE the callback (like parlay-streak)
+    req.session.save((err) => {
+      if (err) {
+        console.error('[MAGIC-TOKEN-REGISTER] Session save error:', err);
+        return res.status(500).json({ error: 'Failed to save session' });
+      }
+      
+      console.log('[MAGIC-TOKEN-REGISTER] Session saved successfully, sessionID:', req.sessionID);
+      console.log('[MAGIC-TOKEN-REGISTER] Cookie config:', {
+        domain: req.session.cookie.domain,
+        secure: req.session.cookie.secure,
+        sameSite: req.session.cookie.sameSite,
+        httpOnly: req.session.cookie.httpOnly,
+        maxAge: req.session.cookie.maxAge,
+      });
+      
+      res.json({
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          createdAt: user.createdAt,
+        },
       });
     });
-
-    console.log('[MAGIC-TOKEN-REGISTER] Sending response, checking headers...');
-    res.json({
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        createdAt: user.createdAt,
-      },
-    });
-    console.log('[MAGIC-TOKEN-REGISTER] Response sent, headers:', res.getHeaders());
   } catch (error) {
     console.error('Magic token register error:', error);
     res.status(500).json({ error: 'Failed to register with magic token' });
@@ -693,41 +683,41 @@ router.post('/magic-token/login', async (req, res) => {
     console.log('[MAGIC-TOKEN-LOGIN] Setting session for user:', magicToken.user.id);
     req.session.userId = magicToken.user.id;
     req.session.username = magicToken.user.username;
+    
+    // Explicitly mark session as modified to ensure cookie is set
+    req.session.cookie.expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    
     console.log('[MAGIC-TOKEN-LOGIN] Session data set:', {
       userId: req.session.userId,
       username: req.session.username,
       sessionID: req.sessionID,
+      cookieExpires: req.session.cookie.expires,
     });
 
-    // Save session and wait for it to complete before sending response
-    await new Promise((resolve, reject) => {
-      req.session.save((err) => {
-        if (err) {
-          console.error('[MAGIC-TOKEN-LOGIN] Session save error:', err);
-          reject(err);
-        } else {
-          console.log('[MAGIC-TOKEN-LOGIN] Session saved successfully, sessionID:', req.sessionID);
-          console.log('[MAGIC-TOKEN-LOGIN] Cookie config:', {
-            domain: req.session.cookie.domain,
-            secure: req.session.cookie.secure,
-            sameSite: req.session.cookie.sameSite,
-            httpOnly: req.session.cookie.httpOnly,
-            maxAge: req.session.cookie.maxAge,
-          });
-          resolve();
-        }
+    // Save session and send response INSIDE the callback (like parlay-streak)
+    req.session.save((err) => {
+      if (err) {
+        console.error('[MAGIC-TOKEN-LOGIN] Session save error:', err);
+        return res.status(500).json({ error: 'Failed to save session' });
+      }
+      
+      console.log('[MAGIC-TOKEN-LOGIN] Session saved successfully, sessionID:', req.sessionID);
+      console.log('[MAGIC-TOKEN-LOGIN] Cookie config:', {
+        domain: req.session.cookie.domain,
+        secure: req.session.cookie.secure,
+        sameSite: req.session.cookie.sameSite,
+        httpOnly: req.session.cookie.httpOnly,
+        maxAge: req.session.cookie.maxAge,
+      });
+      
+      res.json({
+        user: {
+          id: magicToken.user.id,
+          username: magicToken.user.username,
+          createdAt: magicToken.user.createdAt,
+        },
       });
     });
-
-    console.log('[MAGIC-TOKEN-LOGIN] Sending response, checking headers...');
-    const response = res.json({
-      user: {
-        id: magicToken.user.id,
-        username: magicToken.user.username,
-        createdAt: magicToken.user.createdAt,
-      },
-    });
-    console.log('[MAGIC-TOKEN-LOGIN] Response sent, headers:', res.getHeaders());
   } catch (error) {
     console.error('Magic token login error:', error);
     res.status(500).json({ error: 'Failed to login with magic token' });
