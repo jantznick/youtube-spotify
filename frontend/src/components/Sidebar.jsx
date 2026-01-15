@@ -36,7 +36,7 @@ function Sidebar({ onLogout, username, playlists, onCreatePlaylist, onPlaySong, 
       await onCreatePlaylist(playlistName, playlistDescription);
       setPlaylistName('');
       setPlaylistDescription('');
-      setShowCreatePlaylistModal(false);
+      setShowPlaylistModal(false);
       showNotification('Playlist created successfully!', 'success');
     } catch (error) {
       showNotification('Failed to create playlist', 'error');
@@ -139,14 +139,20 @@ function Sidebar({ onLogout, username, playlists, onCreatePlaylist, onPlaySong, 
       `}>
       <div className="p-4 lg:p-5 border-b border-border flex-shrink-0">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              navigate('/home');
+              setIsMobileMenuOpen(false);
+            }}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
             <div className="w-8 h-8 rounded-md bg-gradient-to-br from-primary to-accent flex items-center justify-center">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
               </svg>
             </div>
             <h1 className="text-xl font-bold text-text-primary">MusicDocks</h1>
-          </div>
+          </button>
           <button
             onClick={() => setIsMobileMenuOpen(false)}
             className="lg:hidden text-text-muted hover:text-text-primary transition-colors"

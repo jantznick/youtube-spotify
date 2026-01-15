@@ -10,19 +10,23 @@ export const playerStore = create((set, get) => ({
   setCurrentSong: (song, playlist = null, index = 0, preserveQueue = false) => {
     if (preserveQueue) {
       // When playing from queue, just update the current song and index
+      const { queue } = get();
+      const validIndex = Math.max(0, Math.min(index, queue.length - 1));
       set({
         currentSong: song,
         currentPlaylist: playlist,
-        currentIndex: index,
+        currentIndex: validIndex,
         isPlaying: true,
       });
     } else {
       // When playing from playlist or elsewhere, set the queue
+      const newQueue = playlist?.playlistSongs?.map((ps) => ps.song) || [song];
+      const validIndex = Math.max(0, Math.min(index, newQueue.length - 1));
       set({
         currentSong: song,
         currentPlaylist: playlist,
-        currentIndex: index,
-        queue: playlist?.playlistSongs?.map((ps) => ps.song) || [song],
+        currentIndex: validIndex,
+        queue: newQueue,
         isPlaying: true, // Autoplay when setting a new song
       });
     }
@@ -106,10 +110,13 @@ export const playerStore = create((set, get) => ({
     const { currentIndex, currentSong } = get();
     // Find the new index of the current song
     const newCurrentIndex = newOrder.findIndex(song => song.id === currentSong?.id);
+    const validIndex = newCurrentIndex !== -1 
+      ? Math.max(0, Math.min(newCurrentIndex, newOrder.length - 1))
+      : 0;
     set({
       queue: newOrder,
-      currentIndex: newCurrentIndex !== -1 ? newCurrentIndex : 0,
-      currentSong: newCurrentIndex !== -1 ? newOrder[newCurrentIndex] : newOrder[0] || null,
+      currentIndex: validIndex,
+      currentSong: newCurrentIndex !== -1 ? newOrder[validIndex] : newOrder[0] || null,
     });
   },
 

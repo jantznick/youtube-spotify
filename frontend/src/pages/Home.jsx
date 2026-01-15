@@ -76,6 +76,19 @@ function Home() {
     }
   };
 
+  const handleAddToPlaylist = async (playlistId, songId) => {
+    try {
+      await playlistsAPI.addSong(playlistId, songId);
+      showNotification('Song added to playlist!', 'success');
+      // Reload playlists to get updated song counts
+      const playlistsData = await playlistsAPI.getAll();
+      setPlaylists(playlistsData.playlists);
+    } catch (error) {
+      console.error('Failed to add song to playlist:', error);
+      showNotification(error.response?.data?.error || 'Failed to add song to playlist', 'error');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -110,6 +123,8 @@ function Home() {
           <SongList
             songs={songs}
             onPlay={handlePlaySong}
+            playlists={playlists}
+            onAddToPlaylist={handleAddToPlaylist}
           />
         </div>
       </div>
