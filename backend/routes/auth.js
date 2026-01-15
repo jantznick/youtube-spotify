@@ -159,18 +159,38 @@ router.post('/login', async (req, res) => {
     }
 
     // Set session
+    console.log('[LOGIN] Setting session for user:', user.id);
     req.session.userId = user.id;
     if (user.username) {
       req.session.username = user.username;
     }
+    console.log('[LOGIN] Session data set:', {
+      userId: req.session.userId,
+      username: req.session.username,
+      sessionID: req.sessionID,
+    });
     
-    // Explicitly save session to ensure cookie is set
-    req.session.save((err) => {
-      if (err) {
-        console.error('Session save error:', err);
-      }
+    // Save session and wait for it to complete before sending response
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error('[LOGIN] Session save error:', err);
+          reject(err);
+        } else {
+          console.log('[LOGIN] Session saved successfully, sessionID:', req.sessionID);
+          console.log('[LOGIN] Cookie will be set:', {
+            name: 'connect.sid',
+            domain: req.session.cookie.domain,
+            secure: req.session.cookie.secure,
+            sameSite: req.session.cookie.sameSite,
+            httpOnly: req.session.cookie.httpOnly,
+          });
+          resolve();
+        }
+      });
     });
 
+    console.log('[LOGIN] Sending response, checking headers...');
     res.json({
       user: {
         id: user.id,
@@ -178,6 +198,7 @@ router.post('/login', async (req, res) => {
         createdAt: user.createdAt,
       },
     });
+    console.log('[LOGIN] Response sent, headers:', res.getHeaders());
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Failed to login' });
@@ -543,18 +564,38 @@ router.post('/magic-token/register', async (req, res) => {
     });
 
     // Set session
+    console.log('[MAGIC-TOKEN-REGISTER] Setting session for new user:', user.id);
     req.session.userId = user.id;
     if (user.username) {
       req.session.username = user.username;
     }
+    console.log('[MAGIC-TOKEN-REGISTER] Session data set:', {
+      userId: req.session.userId,
+      username: req.session.username,
+      sessionID: req.sessionID,
+    });
     
-    // Explicitly save session to ensure cookie is set
-    req.session.save((err) => {
-      if (err) {
-        console.error('Session save error:', err);
-      }
+    // Save session and wait for it to complete before sending response
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error('[MAGIC-TOKEN-REGISTER] Session save error:', err);
+          reject(err);
+        } else {
+          console.log('[MAGIC-TOKEN-REGISTER] Session saved successfully, sessionID:', req.sessionID);
+          console.log('[MAGIC-TOKEN-REGISTER] Cookie will be set:', {
+            name: 'connect.sid',
+            domain: req.session.cookie.domain,
+            secure: req.session.cookie.secure,
+            sameSite: req.session.cookie.sameSite,
+            httpOnly: req.session.cookie.httpOnly,
+          });
+          resolve();
+        }
+      });
     });
 
+    console.log('[MAGIC-TOKEN-REGISTER] Sending response, checking headers...');
     res.json({
       user: {
         id: user.id,
@@ -563,6 +604,7 @@ router.post('/magic-token/register', async (req, res) => {
         createdAt: user.createdAt,
       },
     });
+    console.log('[MAGIC-TOKEN-REGISTER] Response sent, headers:', res.getHeaders());
   } catch (error) {
     console.error('Magic token register error:', error);
     res.status(500).json({ error: 'Failed to register with magic token' });
@@ -604,28 +646,49 @@ router.post('/magic-token/login', async (req, res) => {
     }
 
     // Set session
+    console.log('[MAGIC-TOKEN-LOGIN] Setting session for user:', magicToken.user.id);
     req.session.userId = magicToken.user.id;
     req.session.username = magicToken.user.username;
-    
-    // Explicitly save session to ensure cookie is set
-    req.session.save((err) => {
-      if (err) {
-        console.error('Session save error:', err);
-      }
+    console.log('[MAGIC-TOKEN-LOGIN] Session data set:', {
+      userId: req.session.userId,
+      username: req.session.username,
+      sessionID: req.sessionID,
     });
-
+    
     // Delete used token
     await prisma.magicToken.delete({
       where: { id: magicToken.id },
     });
 
-    res.json({
+    // Save session and wait for it to complete before sending response
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => {
+        if (err) {
+          console.error('[MAGIC-TOKEN-LOGIN] Session save error:', err);
+          reject(err);
+        } else {
+          console.log('[MAGIC-TOKEN-LOGIN] Session saved successfully, sessionID:', req.sessionID);
+          console.log('[MAGIC-TOKEN-LOGIN] Cookie will be set:', {
+            name: 'connect.sid',
+            domain: req.session.cookie.domain,
+            secure: req.session.cookie.secure,
+            sameSite: req.session.cookie.sameSite,
+            httpOnly: req.session.cookie.httpOnly,
+          });
+          resolve();
+        }
+      });
+    });
+
+    console.log('[MAGIC-TOKEN-LOGIN] Sending response, checking headers...');
+    const response = res.json({
       user: {
         id: magicToken.user.id,
         username: magicToken.user.username,
         createdAt: magicToken.user.createdAt,
       },
     });
+    console.log('[MAGIC-TOKEN-LOGIN] Response sent, headers:', res.getHeaders());
   } catch (error) {
     console.error('Magic token login error:', error);
     res.status(500).json({ error: 'Failed to login with magic token' });

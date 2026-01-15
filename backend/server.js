@@ -28,6 +28,19 @@ app.use(cookieParser());
 
 // Session configuration with PostgreSQL store
 const PgSession = connectPgSimple(session);
+
+// Determine cookie domain - use .musicdocks.com for production subdomains
+const cookieDomain = process.env.COOKIE_DOMAIN || 
+  (process.env.FRONTEND_URL?.includes('musicdocks.com') ? '.musicdocks.com' : undefined);
+
+console.log('Session config:', {
+  nodeEnv: process.env.NODE_ENV,
+  cookieDomain,
+  frontendUrl: process.env.FRONTEND_URL,
+  secure: true,
+  sameSite: process.env.COOKIE_SAME_SITE || 'lax',
+});
+
 app.use(session({
   store: new PgSession({
     conString: process.env.DATABASE_URL,
@@ -39,12 +52,46 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: true, // Always true for HTTPS in production
-    sameSite: process.env.COOKIE_SAME_SITE || 'lax', // 'lax' for same-site subdomains, 'none' for cross-domain
-    domain: process.env.COOKIE_DOMAIN || (process.env.NODE_ENV === 'production' ? '.musicdocks.com' : undefined), // Share cookies across subdomains
+    secure: true, // Always true for HTTPS
+    sameSite: process.env.COOKIE_SAME_SITE || 'lax',
+    domain: cookieDomain,
     maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
   },
 }));
+
+// Debug middleware - log session and cookie info for auth routes
+app.use((req, res, next) => {
+  if (req.path.includes('/magic-token') || req.path.includes('/login') || req.path.includes('/register')) {
+    console.log(`\n[DEBUG] ${req.method} ${req.path}`);
+    console.log('[DEBUG] Request origin:', req.headers.origin);
+    console.log('[DEBUG] Request cookies:', req.headers.cookie);
+    console.log('[DEBUG] Session before:', {
+      sessionID: req.sessionID,
+      userId: req.session?.userId,
+      cookie: req.session?.cookie ? {
+        domain: req.session.cookie.domain,
+        secure: req.session.cookie.secure,
+        sameSite: req.session.cookie.sameSite,
+        httpOnly: req.session.cookie.httpOnly,
+        maxAge: req.session.cookie.maxAge,
+      } : 'no session',
+    });
+    
+    // Intercept response to log headers
+    const originalEnd = res.end;
+    res.end = function(chunk, encoding) {
+      console.log('[DEBUG] Response status:', res.statusCode);
+      console.log('[DEBUG] Response headers:', res.getHeaders());
+      const setCookie = res.getHeader('Set-Cookie');
+      console.log('[DEBUG] Set-Cookie header:', setCookie);
+      if (!setCookie) {
+        console.error('[DEBUG] WARNING: No Set-Cookie header in response!');
+      }
+      return originalEnd.call(this, chunk, encoding);
+    };
+  }
+  next();
+});
 
 // Middleware to check authentication
 const requireAuth = (req, res, next) => {
