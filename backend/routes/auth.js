@@ -158,7 +158,20 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Set session
+    // Regenerate session to ensure cookie is set
+    await new Promise((resolve, reject) => {
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error('[LOGIN] Session regenerate error:', err);
+          reject(err);
+        } else {
+          console.log('[LOGIN] Session regenerated, new sessionID:', req.sessionID);
+          resolve();
+        }
+      });
+    });
+
+    // Set session data
     console.log('[LOGIN] Setting session for user:', user.id);
     req.session.userId = user.id;
     if (user.username) {
@@ -178,12 +191,12 @@ router.post('/login', async (req, res) => {
           reject(err);
         } else {
           console.log('[LOGIN] Session saved successfully, sessionID:', req.sessionID);
-          console.log('[LOGIN] Cookie will be set:', {
-            name: 'connect.sid',
+          console.log('[LOGIN] Cookie config:', {
             domain: req.session.cookie.domain,
             secure: req.session.cookie.secure,
             sameSite: req.session.cookie.sameSite,
             httpOnly: req.session.cookie.httpOnly,
+            maxAge: req.session.cookie.maxAge,
           });
           resolve();
         }
@@ -563,7 +576,20 @@ router.post('/magic-token/register', async (req, res) => {
       },
     });
 
-    // Set session
+    // Regenerate session to ensure cookie is set
+    await new Promise((resolve, reject) => {
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error('[MAGIC-TOKEN-REGISTER] Session regenerate error:', err);
+          reject(err);
+        } else {
+          console.log('[MAGIC-TOKEN-REGISTER] Session regenerated, new sessionID:', req.sessionID);
+          resolve();
+        }
+      });
+    });
+
+    // Set session data
     console.log('[MAGIC-TOKEN-REGISTER] Setting session for new user:', user.id);
     req.session.userId = user.id;
     if (user.username) {
@@ -583,12 +609,12 @@ router.post('/magic-token/register', async (req, res) => {
           reject(err);
         } else {
           console.log('[MAGIC-TOKEN-REGISTER] Session saved successfully, sessionID:', req.sessionID);
-          console.log('[MAGIC-TOKEN-REGISTER] Cookie will be set:', {
-            name: 'connect.sid',
+          console.log('[MAGIC-TOKEN-REGISTER] Cookie config:', {
             domain: req.session.cookie.domain,
             secure: req.session.cookie.secure,
             sameSite: req.session.cookie.sameSite,
             httpOnly: req.session.cookie.httpOnly,
+            maxAge: req.session.cookie.maxAge,
           });
           resolve();
         }
@@ -645,7 +671,25 @@ router.post('/magic-token/login', async (req, res) => {
       return res.status(401).json({ error: 'Token has expired' });
     }
 
-    // Set session
+    // Delete used token first
+    await prisma.magicToken.delete({
+      where: { id: magicToken.id },
+    });
+
+    // Regenerate session to ensure cookie is set
+    await new Promise((resolve, reject) => {
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error('[MAGIC-TOKEN-LOGIN] Session regenerate error:', err);
+          reject(err);
+        } else {
+          console.log('[MAGIC-TOKEN-LOGIN] Session regenerated, new sessionID:', req.sessionID);
+          resolve();
+        }
+      });
+    });
+
+    // Set session data
     console.log('[MAGIC-TOKEN-LOGIN] Setting session for user:', magicToken.user.id);
     req.session.userId = magicToken.user.id;
     req.session.username = magicToken.user.username;
@@ -653,11 +697,6 @@ router.post('/magic-token/login', async (req, res) => {
       userId: req.session.userId,
       username: req.session.username,
       sessionID: req.sessionID,
-    });
-    
-    // Delete used token
-    await prisma.magicToken.delete({
-      where: { id: magicToken.id },
     });
 
     // Save session and wait for it to complete before sending response
@@ -668,12 +707,12 @@ router.post('/magic-token/login', async (req, res) => {
           reject(err);
         } else {
           console.log('[MAGIC-TOKEN-LOGIN] Session saved successfully, sessionID:', req.sessionID);
-          console.log('[MAGIC-TOKEN-LOGIN] Cookie will be set:', {
-            name: 'connect.sid',
+          console.log('[MAGIC-TOKEN-LOGIN] Cookie config:', {
             domain: req.session.cookie.domain,
             secure: req.session.cookie.secure,
             sameSite: req.session.cookie.sameSite,
             httpOnly: req.session.cookie.httpOnly,
+            maxAge: req.session.cookie.maxAge,
           });
           resolve();
         }
