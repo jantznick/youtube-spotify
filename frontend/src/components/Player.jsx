@@ -40,7 +40,7 @@ function Player() {
     height: '200',
     width: '100%',
     playerVars: {
-      autoplay: 0,
+      autoplay: 1, // Enable autoplay
       controls: 1,
       modestbranding: 1,
       rel: 0,
@@ -65,8 +65,16 @@ function Player() {
 
   const handleReady = (event) => {
     playerRef.current = event.target;
+    // Autoplay if isPlaying is true (which it should be when a new song is set)
     if (isPlaying) {
-      event.target.playVideo();
+      // Small delay to ensure player is fully ready
+      setTimeout(() => {
+        try {
+          event.target.playVideo();
+        } catch (error) {
+          console.error('Error playing video on ready:', error);
+        }
+      }, 100);
     }
   };
 
@@ -84,13 +92,24 @@ function Player() {
     }
   };
 
-  // Show toast when song changes
+  // Show toast and autoplay when song changes
   useEffect(() => {
-    if (currentSong) {
+    if (currentSong && playerRef.current) {
       setShowToast(true);
       setIsMinimized(false);
+      // Ensure video plays when song changes
+      try {
+        // Small delay to ensure player is ready
+        setTimeout(() => {
+          if (playerRef.current && isPlaying) {
+            playerRef.current.playVideo();
+          }
+        }, 100);
+      } catch (error) {
+        console.error('Error autoplaying on song change:', error);
+      }
     }
-  }, [currentSong]);
+  }, [currentSong, isPlaying]);
 
   if (!currentSong) {
     return null;

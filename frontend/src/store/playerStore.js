@@ -13,6 +13,7 @@ export const playerStore = create((set, get) => ({
       currentPlaylist: playlist,
       currentIndex: index,
       queue: playlist?.playlistSongs?.map((ps) => ps.song) || [song],
+      isPlaying: true, // Autoplay when setting a new song
     });
   },
 
