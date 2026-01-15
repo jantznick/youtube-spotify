@@ -140,10 +140,24 @@ router.post('/login', async (req, res) => {
     if (isEmail) {
       user = await prisma.user.findUnique({
         where: { email: usernameOrEmail },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          password: true, // Need password for verification
+          createdAt: true,
+        },
       });
     } else {
       user = await prisma.user.findUnique({
         where: { username: usernameOrEmail },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          password: true, // Need password for verification
+          createdAt: true,
+        },
       });
     }
 
@@ -203,6 +217,7 @@ router.post('/login', async (req, res) => {
         user: {
           id: user.id,
           username: user.username,
+          email: user.email,
           createdAt: user.createdAt,
         },
       });
@@ -642,10 +657,19 @@ router.post('/magic-token/login', async (req, res) => {
     }
     token = String(token);
 
-    // Find token
+    // Find token with user data (excluding password)
     const magicToken = await prisma.magicToken.findUnique({
       where: { token },
-      include: { user: true },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            createdAt: true,
+          },
+        },
+      },
     });
 
     if (!magicToken) {
@@ -714,6 +738,7 @@ router.post('/magic-token/login', async (req, res) => {
         user: {
           id: magicToken.user.id,
           username: magicToken.user.username,
+          email: magicToken.user.email,
           createdAt: magicToken.user.createdAt,
         },
       });
