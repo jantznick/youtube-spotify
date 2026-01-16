@@ -12,7 +12,9 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "backfill:source-type": "node scripts/backfill-source-type.js",
-    "fix:session": "node scripts/fix-session-table.js"
+    "fix:session": "node scripts/fix-session-table.js",
+    "populate:feed": "node scripts/populate-homepage-feed.js",
+    "resolve:drift": "node scripts/resolve-dev-drift.js"
   },
   "keywords": [],
   "author": "",

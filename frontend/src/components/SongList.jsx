@@ -44,11 +44,11 @@ function SongList({ songs, onPlay, playlists, onAddToPlaylist }) {
 
   return (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 lg:gap-6">
+      <div className="flex gap-3 sm:gap-4 lg:gap-6 overflow-x-auto pb-4 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 scrollbar-hide">
         {songs.map((song) => (
         <div
           key={song.id}
-          className="bg-bg-card p-2 sm:p-3 lg:p-4 rounded-lg sm:rounded-xl hover:bg-bg-hover transition-all group cursor-pointer border border-border hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10"
+          className="bg-bg-card p-2 sm:p-3 lg:p-4 rounded-lg sm:rounded-xl hover:bg-bg-hover transition-all group cursor-pointer border border-border hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10 flex-shrink-0 w-40 sm:w-48 lg:w-56"
           onClick={() => onPlay(song)}
         >
           <div className="relative mb-4">

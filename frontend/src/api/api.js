@@ -147,3 +147,29 @@ export const userAPI = {
       body: JSON.stringify({ email, username }),
     }),
 };
+
+export const feedAPI = {
+  getHomePage: () => request('/feed/homepage'),
+};
+
+export const adminAPI = {
+  getFeedEntries: () => request('/admin/feed'),
+  createFeedEntry: (data) =>
+    request('/admin/feed', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteFeedEntry: (genre) =>
+    request(`/admin/feed/${genre}`, {
+      method: 'DELETE',
+    }),
+  refreshFeedEntry: (genre) =>
+    request(`/admin/feed/${genre}/refresh`, {
+      method: 'POST',
+    }),
+  populateFeed: (config) =>
+    request('/admin/feed/populate', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
+};

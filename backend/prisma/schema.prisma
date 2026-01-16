@@ -107,3 +107,17 @@ model Session {
   @@map("session")
   @@index([expire])
 }
+
+model HomePageFeed {
+  id         String   @id @default(uuid())
+  genre      String
+  tagline    String?
+  sourceType String?  // 'youtube' or 'spotify'
+  playlistUrl String? // Original playlist URL for refreshing
+  songs      Json     @db.JsonB // Array of song IDs
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([genre])
+  @@index([genre])
+}
