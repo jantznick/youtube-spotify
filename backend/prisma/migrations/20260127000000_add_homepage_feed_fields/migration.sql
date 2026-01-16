@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "HomePageFeed" ADD COLUMN IF NOT EXISTS "tagline" TEXT;
+ALTER TABLE "HomePageFeed" ADD COLUMN IF NOT EXISTS "sourceType" TEXT;
+ALTER TABLE "HomePageFeed" ADD COLUMN IF NOT EXISTS "playlistUrl" TEXT;
