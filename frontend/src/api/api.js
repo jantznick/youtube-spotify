@@ -159,6 +159,11 @@ export const adminAPI = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  updateFeedEntry: (oldGenre, data) =>
+    request(`/admin/feed/${oldGenre}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
   deleteFeedEntry: (genre) =>
     request(`/admin/feed/${genre}`, {
       method: 'DELETE',

@@ -101,15 +101,14 @@ router.post('/feed', async (req, res) => {
       },
     });
 
-    // Process the playlist URL in the background
-    processPlaylistUrl(playlistUrl)
+    // Process the playlist URL in the background (will update incrementally)
+    processPlaylistUrl(playlistUrl, genre)
       .then(({ songIds, sourceType: detectedSourceType }) => {
         if (songIds.length > 0) {
-          const uniqueSongIds = [...new Set(songIds)];
+          // Final update with sourceType (songs already updated incrementally)
           return prisma.homePageFeed.update({
             where: { genre },
             data: {
-              songs: uniqueSongIds,
               sourceType: detectedSourceType || sourceType,
               updatedAt: new Date(),
             },
@@ -128,6 +127,43 @@ router.post('/feed', async (req, res) => {
   } catch (error) {
     console.error('Create/update feed entry error:', error);
     res.status(500).json({ error: 'Failed to create/update feed entry' });
+  }
+});
+
+// Update homepage feed entry (genre and tagline)
+router.put('/feed/:genre', async (req, res) => {
+  try {
+    const { genre } = req.params;
+    const { genre: newGenre, tagline } = req.body;
+
+    if (!newGenre) {
+      return res.status(400).json({ error: 'Genre is required' });
+    }
+
+    // If genre is changing, we need to handle it carefully
+    if (newGenre !== genre) {
+      // Check if new genre already exists
+      const existing = await prisma.homePageFeed.findUnique({
+        where: { genre: newGenre },
+      });
+      if (existing) {
+        return res.status(400).json({ error: 'Genre already exists' });
+      }
+    }
+
+    const feedEntry = await prisma.homePageFeed.update({
+      where: { genre },
+      data: {
+        genre: newGenre,
+        tagline: tagline || null,
+        updatedAt: new Date(),
+      },
+    });
+
+    res.json({ feedEntry, message: 'Feed entry updated successfully' });
+  } catch (error) {
+    console.error('Update feed entry error:', error);
+    res.status(500).json({ error: 'Failed to update feed entry' });
   }
 });
 
@@ -160,15 +196,22 @@ router.post('/feed/:genre/refresh', async (req, res) => {
       return res.status(404).json({ error: 'Feed entry not found or no playlist URL' });
     }
 
-    // Process the playlist URL in the background
-    processPlaylistUrl(feedEntry.playlistUrl)
+    // Process the playlist URL in the background (will update incrementally)
+    // First clear the songs array
+    await prisma.homePageFeed.update({
+      where: { genre },
+      data: {
+        songs: [],
+      },
+    });
+    
+    processPlaylistUrl(feedEntry.playlistUrl, genre)
       .then(({ songIds, sourceType }) => {
         if (songIds.length > 0) {
-          const uniqueSongIds = [...new Set(songIds)];
+          // Final update with sourceType (songs already updated incrementally)
           return prisma.homePageFeed.update({
             where: { genre },
             data: {
-              songs: uniqueSongIds,
               sourceType: sourceType || feedEntry.sourceType,
               updatedAt: new Date(),
             },

@@ -275,7 +275,8 @@ async function searchYouTubeForSong(songName, artistName) {
 }
 
 // Process a playlist URL and return song IDs
-async function processPlaylistUrl(playlistUrl) {
+// If genre is provided, update the feed entry incrementally as songs are processed
+async function processPlaylistUrl(playlistUrl, genre = null) {
   const sourceType = detectSourceType(playlistUrl);
   const songIds = [];
   
@@ -309,6 +310,18 @@ async function processPlaylistUrl(playlistUrl) {
         }
         
         songIds.push(song.id);
+        
+        // If genre is provided, update feed entry incrementally
+        if (genre) {
+          const uniqueSongIds = [...new Set(songIds)];
+          await prisma.homePageFeed.update({
+            where: { genre },
+            data: {
+              songs: uniqueSongIds,
+              sourceType: sourceType,
+            },
+          });
+        }
       } catch (error) {
         console.error(`Error processing video ${videoId}:`, error);
       }
@@ -343,6 +356,18 @@ async function processPlaylistUrl(playlistUrl) {
         }
         
         songIds.push(song.id);
+        
+        // If genre is provided, update feed entry incrementally
+        if (genre) {
+          const uniqueSongIds = [...new Set(songIds)];
+          await prisma.homePageFeed.update({
+            where: { genre },
+            data: {
+              songs: uniqueSongIds,
+              sourceType: sourceType,
+            },
+          });
+        }
       } catch (error) {
         console.error(`Error processing song "${spotifySong.title}":`, error);
       }
@@ -364,32 +389,37 @@ async function populateHomePageFeed(feedConfig) {
       console.log(`   Tagline: ${tagline || 'N/A'}`);
       console.log(`   Playlist: ${playlistUrl}`);
       
-      const { songIds, sourceType } = await processPlaylistUrl(playlistUrl);
+      // Create/update feed entry first with empty songs array
+      await prisma.homePageFeed.upsert({
+        where: { genre },
+        update: {
+          tagline: tagline || null,
+          playlistUrl: playlistUrl || null,
+          songs: [],
+          updatedAt: new Date(),
+        },
+        create: {
+          genre,
+          tagline: tagline || null,
+          playlistUrl: playlistUrl || null,
+          songs: [],
+        },
+      });
+      
+      // Process playlist and update feed entry incrementally as songs are processed
+      const { songIds, sourceType } = await processPlaylistUrl(playlistUrl, genre);
       
       if (songIds.length === 0) {
         console.warn(`   ⚠️  No songs found for ${genre}`);
         continue;
       }
       
-      // Remove duplicates
-      const uniqueSongIds = [...new Set(songIds)];
-      
-      // Upsert the feed entry
-      await prisma.homePageFeed.upsert({
+      // Final update with sourceType (songs already updated incrementally)
+      await prisma.homePageFeed.update({
         where: { genre },
-        update: {
-          tagline: tagline || null,
+        data: {
           sourceType: sourceType || null,
-          playlistUrl: playlistUrl || null,
-          songs: uniqueSongIds,
           updatedAt: new Date(),
-        },
-        create: {
-          genre,
-          tagline: tagline || null,
-          sourceType: sourceType || null,
-          playlistUrl: playlistUrl || null,
-          songs: uniqueSongIds,
         },
       });
       
