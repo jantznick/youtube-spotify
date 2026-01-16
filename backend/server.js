@@ -15,6 +15,7 @@ import playlistRoutes from './routes/playlists.js';
 import userRoutes from './routes/user.js';
 import feedRoutes from './routes/feed.js';
 import adminRoutes from './routes/admin.js';
+import searchRoutes from './routes/search.js';
 
 dotenv.config();
 
@@ -256,6 +257,7 @@ app.use('/api/auth', authRoutes);
 // Songs GET endpoint is public, but PUT requires auth
 app.use('/api/songs', songRoutes);
 app.use('/api/feed', feedRoutes);
+app.use('/api/search', searchRoutes);
 app.use('/api/playlists', requireAuth, playlistRoutes);
 app.use('/api/user', requireAuth, userRoutes);
 app.use('/api/admin', requireAuth, requireAdmin, adminRoutes);

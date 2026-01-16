@@ -6,6 +6,7 @@ import { authAPI, feedAPI, playlistsAPI } from '../api/api';
 import Sidebar from '../components/Sidebar';
 import SongList from '../components/SongList';
 import NotificationModal from '../components/NotificationModal';
+import SearchBar from '../components/SearchBar';
 
 function Home() {
   const [homePageFeed, setHomePageFeed] = useState([]);
@@ -138,13 +139,16 @@ function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
-              <div>
+              <div className="flex-1">
                 <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-2">
                   Discover
                 </h1>
-                <p className="text-sm sm:text-base text-text-muted">
+                <p className="text-sm sm:text-base text-text-muted mb-4">
                   Explore music by genre
                 </p>
+                <div className="max-w-md">
+                  <SearchBar />
+                </div>
               </div>
             </div>
           </div>

@@ -178,3 +178,9 @@ export const adminAPI = {
       body: JSON.stringify(config),
     }),
 };
+
+export const searchAPI = {
+  search: (query) => request(`/search?q=${encodeURIComponent(query)}`),
+  getSong: (id) => request(`/search/song/${id}`),
+  getArtist: (id) => request(`/search/artist/${id}`),
+};

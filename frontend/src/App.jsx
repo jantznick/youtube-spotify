@@ -7,6 +7,7 @@ import Playlist from './pages/Playlist';
 import Queue from './pages/Queue';
 import Landing from './pages/Landing';
 import Explore from './pages/Explore';
+import Artist from './pages/Artist';
 import ForgotPassword from './pages/ForgotPassword';
 import NotFound from './pages/NotFound';
 import Admin from './pages/Admin';
@@ -124,6 +125,10 @@ function App() {
         <Route
           path="/explore"
           element={<Explore />}
+        />
+        <Route
+          path="/artist/:id"
+          element={<Artist />}
         />
         <Route
           path="/admin"

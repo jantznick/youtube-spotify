@@ -16,11 +16,11 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Link } from 'react-router-dom';
 import usePlayerStore from '../store/playerStore';
 import useAuthStore from '../store/authStore';
 import { playlistsAPI } from '../api/api';
 import Sidebar from '../components/Sidebar';
+import Header from '../components/Header';
 import NotificationModal from '../components/NotificationModal';
 import ConfirmModal from '../components/ConfirmModal';
 import { useAuthModal } from '../contexts/AuthModalContext';
@@ -269,9 +269,10 @@ function Queue() {
 
   const upcomingSongs = queue.slice(currentIndex + 1);
 
-  return (
-    <div className="flex h-screen bg-bg-dark">
-      {isAuthenticated && (
+  // If authenticated, show with sidebar (matching Home/Playlist layout)
+  if (isAuthenticated) {
+    return (
+      <div className="flex h-screen bg-bg-dark">
         <Sidebar
           onLogout={() => navigate('/')}
           username={user?.username}
@@ -282,47 +283,11 @@ function Queue() {
           onDeletePlaylist={() => {}}
           onRefresh={() => {}}
         />
-      )}
-      {!isAuthenticated && (
-        <header className="fixed top-0 left-0 right-0 z-40 bg-bg-dark/80 backdrop-blur-md border-b border-border">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 sm:gap-4">
-            <Link to="/explore" className="flex items-center gap-2 flex-shrink-0">
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                </svg>
-              </div>
-              <span className="text-lg sm:text-xl font-bold text-text-primary">MusicDocks</span>
-            </Link>
-            <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-              <span className="text-xs sm:text-sm text-text-secondary hidden sm:inline">
-                <button onClick={() => openAuthModal('register')} className="text-primary hover:text-primary-dark">
-                  Sign up free
-                </button> to create playlists and save your favorites
-              </span>
-            </div>
-          </div>
-        </header>
-      )}
-      <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
-        <div className={`flex-1 overflow-y-auto ${!isAuthenticated ? 'pt-16 sm:pt-20' : 'p-4 sm:p-6 lg:p-8'}`}>
-          <div className={!isAuthenticated ? 'max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 lg:py-8' : ''}>
+        <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             <div className="flex items-center gap-3 mb-4">
-              {isAuthenticated && (
-                <button
-                  onClick={() => {
-                    window.dispatchEvent(new CustomEvent('toggle-sidebar'));
-                  }}
-                  className="lg:hidden text-text-muted hover:text-text-primary transition-colors"
-                  aria-label="Toggle menu"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                </button>
-              )}
               <button
-                onClick={() => navigate(isAuthenticated ? '/home' : '/explore')}
+                onClick={() => navigate('/home')}
                 className="text-sm sm:text-base text-text-muted hover:text-text-primary transition flex items-center gap-2"
               >
                 <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -339,71 +304,179 @@ function Queue() {
               </p>
             </div>
 
-          {currentSong && (
-            <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-primary/10 border border-primary/30 rounded-xl">
-              <div className="text-xs font-medium text-primary mb-2">Now Playing</div>
-              <div className="flex items-center gap-3 sm:gap-4">
-                {currentSong.thumbnailUrl && (
-                  <img
-                    src={currentSong.thumbnailUrl}
-                    alt={currentSong.title}
-                    className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-lg flex-shrink-0"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm sm:text-base text-text-primary truncate">{currentSong.title}</div>
-                  <div className="text-xs sm:text-sm text-text-muted truncate">
-                    {currentSong.artist || 'Unknown Artist'}
+            {currentSong && (
+              <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-primary/10 border border-primary/30 rounded-xl">
+                <div className="text-xs font-medium text-primary mb-2">Now Playing</div>
+                <div className="flex items-center gap-3 sm:gap-4">
+                  {currentSong.thumbnailUrl && (
+                    <img
+                      src={currentSong.thumbnailUrl}
+                      alt={currentSong.title}
+                      className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-lg flex-shrink-0"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm sm:text-base text-text-primary truncate">{currentSong.title}</div>
+                    <div className="text-xs sm:text-sm text-text-muted truncate">
+                      {currentSong.artist || 'Unknown Artist'}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {upcomingSongs.length === 0 ? (
-            <div className="text-center text-text-muted py-20">
-              <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-bg-card flex items-center justify-center">
-                <svg className="w-12 h-12 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                </svg>
-              </div>
-              <p className="text-xl font-medium text-text-primary mb-2">Queue is empty</p>
-              <p className="text-text-muted">Add songs to your queue to see them here</p>
-            </div>
-          ) : (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={upcomingSongs.map((_, idx) => `queue-item-${currentIndex + 1 + idx}`)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="space-y-2">
-                  {upcomingSongs.map((song, idx) => {
-                    const actualIndex = currentIndex + 1 + idx;
-                    const isCurrentlyPlaying = currentSong?.id === song.id;
-                    return (
-                      <SortableQueueItem
-                        key={`${song.id}-${actualIndex}`}
-                        song={song}
-                        index={idx}
-                        actualIndex={actualIndex}
-                        isCurrentlyPlaying={isCurrentlyPlaying}
-                        onPlay={handlePlaySong}
-                        onPlayNext={handlePlayNext}
-                        onRemove={handleRemoveFromQueue}
-                        setConfirmModal={setConfirmModal}
-                      />
-                    );
-                  })}
+            {upcomingSongs.length === 0 ? (
+              <div className="text-center text-text-muted py-20">
+                <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-bg-card flex items-center justify-center">
+                  <svg className="w-12 h-12 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
                 </div>
-              </SortableContext>
-            </DndContext>
-          )}
+                <p className="text-xl font-medium text-text-primary mb-2">Queue is empty</p>
+                <p className="text-text-muted">Add songs to your queue to see them here</p>
+              </div>
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={upcomingSongs.map((_, idx) => `queue-item-${currentIndex + 1 + idx}`)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-2">
+                    {upcomingSongs.map((song, idx) => {
+                      const actualIndex = currentIndex + 1 + idx;
+                      const isCurrentlyPlaying = currentSong?.id === song.id;
+                      return (
+                        <SortableQueueItem
+                          key={`${song.id}-${actualIndex}`}
+                          song={song}
+                          index={idx}
+                          actualIndex={actualIndex}
+                          isCurrentlyPlaying={isCurrentlyPlaying}
+                          onPlay={handlePlaySong}
+                          onPlayNext={handlePlayNext}
+                          onRemove={handleRemoveFromQueue}
+                          setConfirmModal={setConfirmModal}
+                        />
+                      );
+                    })}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )}
           </div>
         </div>
+
+        {notification && (
+          <NotificationModal
+            message={notification.message}
+            type={notification.type}
+            onClose={() => setNotification(null)}
+          />
+        )}
+
+        {confirmModal && (
+          <ConfirmModal
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={confirmModal.onCancel}
+            type={confirmModal.type}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // If not authenticated, show without sidebar (matching Explore/Artist page layout)
+  return (
+    <div className="min-h-screen bg-bg-dark">
+      <Header />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 lg:py-8">
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => navigate('/explore')}
+            className="text-sm sm:text-base text-text-muted hover:text-text-primary transition flex items-center gap-2"
+          >
+            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
+        </div>
+
+        <div className="mb-4 sm:mb-6 lg:mb-8">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-text-primary mb-1 sm:mb-2">Queue</h1>
+          <p className="text-xs sm:text-sm lg:text-base text-text-muted">
+            {upcomingSongs.length} {upcomingSongs.length === 1 ? 'song' : 'songs'} upcoming
+          </p>
+        </div>
+
+        {currentSong && (
+          <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-primary/10 border border-primary/30 rounded-xl">
+            <div className="text-xs font-medium text-primary mb-2">Now Playing</div>
+            <div className="flex items-center gap-3 sm:gap-4">
+              {currentSong.thumbnailUrl && (
+                <img
+                  src={currentSong.thumbnailUrl}
+                  alt={currentSong.title}
+                  className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-lg flex-shrink-0"
+                />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm sm:text-base text-text-primary truncate">{currentSong.title}</div>
+                <div className="text-xs sm:text-sm text-text-muted truncate">
+                  {currentSong.artist || 'Unknown Artist'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {upcomingSongs.length === 0 ? (
+          <div className="text-center text-text-muted py-20">
+            <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-bg-card flex items-center justify-center">
+              <svg className="w-12 h-12 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              </svg>
+            </div>
+            <p className="text-xl font-medium text-text-primary mb-2">Queue is empty</p>
+            <p className="text-text-muted">Add songs to your queue to see them here</p>
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={upcomingSongs.map((_, idx) => `queue-item-${currentIndex + 1 + idx}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-2">
+                {upcomingSongs.map((song, idx) => {
+                  const actualIndex = currentIndex + 1 + idx;
+                  const isCurrentlyPlaying = currentSong?.id === song.id;
+                  return (
+                    <SortableQueueItem
+                      key={`${song.id}-${actualIndex}`}
+                      song={song}
+                      index={idx}
+                      actualIndex={actualIndex}
+                      isCurrentlyPlaying={isCurrentlyPlaying}
+                      onPlay={handlePlaySong}
+                      onPlayNext={handlePlayNext}
+                      onRemove={handleRemoveFromQueue}
+                      setConfirmModal={setConfirmModal}
+                    />
+                  );
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
+        )}
       </div>
 
       {notification && (
