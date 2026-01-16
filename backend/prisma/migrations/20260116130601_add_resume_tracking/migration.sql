@@ -1,0 +1,2 @@
+-- This migration was empty/incomplete and has been marked as applied
+-- No schema changes were made

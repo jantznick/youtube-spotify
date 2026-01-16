@@ -14,7 +14,12 @@
     "backfill:source-type": "node scripts/backfill-source-type.js",
     "fix:session": "node scripts/fix-session-table.js",
     "populate:feed": "node scripts/populate-homepage-feed.js",
-    "resolve:drift": "node scripts/resolve-dev-drift.js"
+    "resolve:drift": "node scripts/resolve-dev-drift.js",
+    "discogs:download:artists": "node scripts/download-discogs-artists.js",
+    "discogs:process:artists": "node scripts/process-discogs-artists.js",
+    "discogs:process:releases": "node scripts/process-discogs-releases.js",
+    "discogs:process:releases:debug": "node scripts/process-discogs-releases.js --debug",
+    "db:reset": "npx prisma migrate reset --force"
   },
   "keywords": [],
   "author": "",
@@ -31,6 +36,7 @@
     "pg": "^8.12.0",
     "puppeteer": "^23.11.1",
     "resend": "^4.0.0",
+    "sax": "^1.4.4",
     "socket.io": "^4.8.3",
     "youtube-playlist": "^1.0.1",
     "ytdl-core": "^4.11.5"

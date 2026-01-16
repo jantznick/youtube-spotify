@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,114 +7,186 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(uuid())
-  username  String?  @unique
-  email     String?  @unique
-  password  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model DiscogsArtist {
+  id                   String                 @id @default(uuid())
+  discogsId            String?
+  name                 String                 @unique
+  realname             String?
+  profile              String?                @db.Text
+  dataQuality          String?
+  urls                 Json?                  @db.JsonB
+  nameVariations       Json?                  @db.JsonB
+  aliases              Json?                  @db.JsonB
+  members              Json?                  @db.JsonB
+  groups               Json?                  @db.JsonB
+  lastUpdated          DateTime
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  DiscogsReleaseArtist DiscogsReleaseArtist[]
 
-  playlists Playlist[]
-  magicTokens MagicToken[]
-  passwordResetTokens PasswordResetToken[]
+  @@index([discogsId])
+  @@index([name])
 }
 
-model Song {
-  id          String   @id @default(uuid())
-  title       String
-  artist      String?
-  youtubeId   String   @unique // Global songs, no duplicates by youtubeId
-  thumbnailUrl String?
-  duration    Int?     // Duration in seconds
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model DiscogsDataSync {
+  id                String    @id
+  dumpDate          String    @unique
+  artistsFile       String?
+  releasesFile      String?
+  artistsProcessed  Int       @default(0)
+  releasesProcessed Int       @default(0)
+  tracksProcessed   Int       @default(0)
+  songsUpserted     Int       @default(0)
+  status            String
+  startedAt         DateTime
+  completedAt       DateTime?
+  error             String?
 
-  playlistSongs PlaylistSong[]
+  @@index([status])
+}
+
+model DiscogsRelease {
+  id                   String                 @id
+  title                String
+  status               String
+  genres               Json?
+  styles               Json?
+  released             String?
+  dataQuality          String?
+  youtubeVideos        Json?
+  lastUpdated          DateTime
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  DiscogsReleaseArtist DiscogsReleaseArtist[]
+
+  @@index([title])
+}
+
+model DiscogsReleaseArtist {
+  releaseId      String
+  artistId       String
+  DiscogsArtist  DiscogsArtist  @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  DiscogsRelease DiscogsRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@id([releaseId, artistId])
+}
+
+model HomePageFeed {
+  id          String   @id
+  genre       String   @unique
+  songs       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  tagline     String?
+  sourceType  String?
+  playlistUrl String?
+
+  @@index([genre])
+}
+
+model MagicToken {
+  id        String   @id
+  token     String   @unique
+  userId    String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  username  String?
+  email     String?
+  User      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([expiresAt])
+  @@index([token])
+  @@index([username])
+}
+
+model PasswordResetToken {
+  id        String   @id
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([token])
+  @@index([userId])
 }
 
 model Playlist {
-  id          String   @id @default(uuid())
-  name        String
-  description String?
-  sourceUrl   String?  // URL of the original YouTube or Spotify playlist
-  sourceType  String?  // 'youtube', 'spotify', or null for manual playlists
-  autoUpdate  Boolean  @default(false) // Whether to periodically refetch from source
-  lastSyncedAt DateTime? // When the playlist was last refreshed from source
-  expectedSongCount Int? // Expected number of songs during import (null when complete)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  playlistSongs PlaylistSong[]
+  id                String         @id
+  name              String
+  description       String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime
+  userId            String
+  sourceUrl         String?
+  sourceType        String?
+  autoUpdate        Boolean        @default(false)
+  lastSyncedAt      DateTime?
+  expectedSongCount Int?
+  User              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  PlaylistSong      PlaylistSong[]
 }
 
 model PlaylistSong {
-  id         String   @id @default(uuid())
+  id         String   @id
   position   Int      @default(0)
   createdAt  DateTime @default(now())
-
   playlistId String
-  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
-
   songId     String
-  song       Song     @relation(fields: [songId], references: [id], onDelete: Cascade)
+  Playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  Song       Song     @relation(fields: [songId], references: [id], onDelete: Cascade)
 
   @@unique([playlistId, songId])
   @@index([playlistId, position])
 }
 
-model MagicToken {
-  id        String   @id @default(uuid())
-  token     String   @unique
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  username  String?  // For registration tokens
-  email     String?  // For email-only registration tokens
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+model Song {
+  id                   String         @id @default(uuid())
+  title                String
+  artist               String?
+  youtubeId            String?        @unique
+  thumbnailUrl         String?
+  duration             Int?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  discogsArtistIds     Json?
+  discogsCountry       String?
+  discogsExtraArtists  Json?
+  discogsFormat        String?
+  discogsGenres        Json?
+  discogsLabel         String?
+  discogsLastUpdated   DateTime?
+  discogsMasterId      String?
+  discogsReleaseId     String?
+  discogsReleased      String?
+  discogsStyles        Json?
+  discogsTrackPosition String?
+  PlaylistSong         PlaylistSong[]
 
-  @@index([token])
-  @@index([expiresAt])
-  @@index([username])
-  @@index([email])
+  @@index([artist])
+  @@index([discogsReleaseId])
+  @@index([title])
+  @@index([youtubeId])
 }
 
-model PasswordResetToken {
-  id        String   @id @default(uuid())
-  token     String   @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  @@index([token])
-  @@index([expiresAt])
-  @@index([userId])
+model User {
+  id                 String               @id
+  username           String?              @unique
+  password           String
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime
+  email              String?              @unique
+  MagicToken         MagicToken[]
+  PasswordResetToken PasswordResetToken[]
+  Playlist           Playlist[]
 }
 
-// Session table for connect-pg-simple (managed by express-session)
-// This table is created via migration to persist across rebuilds
-model Session {
+model session {
   sid    String   @id
-  sess   Json     @db.JsonB
+  sess   Json
   expire DateTime @db.Timestamp(6)
 
-  @@map("session")
   @@index([expire])
-}
-
-model HomePageFeed {
-  id         String   @id @default(uuid())
-  genre      String
-  tagline    String?
-  sourceType String?  // 'youtube' or 'spotify'
-  playlistUrl String? // Original playlist URL for refreshing
-  songs      Json     @db.JsonB // Array of song IDs
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@unique([genre])
-  @@index([genre])
 }

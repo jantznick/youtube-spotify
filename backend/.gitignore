@@ -1,4 +1,17 @@
+# Dependencies
 node_modules/
+
+# Environment variables
 .env
+.env.local
+
+# Data files (Discogs dumps are large)
+data/
+
+# Logs
+*.log
+populate-feed.log
+
+# OS files
 .DS_Store
-dist/
+Thumbs.db
