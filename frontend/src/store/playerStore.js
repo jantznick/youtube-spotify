@@ -18,6 +18,9 @@ export const playerStore = create((set, get) => ({
       index,
     });
     
+    // Only autoplay if song has a YouTube ID
+    const hasYouTubeId = !!song?.youtubeId;
+    
     if (preserveQueue) {
       // When playing from queue, just update the current song and index
       const { queue } = get();
@@ -27,7 +30,7 @@ export const playerStore = create((set, get) => ({
         currentSong: song,
         currentPlaylist: playlist,
         currentIndex: validIndex,
-        isPlaying: true,
+        isPlaying: hasYouTubeId, // Only autoplay if has YouTube ID
       });
     } else {
       // When playing from playlist or elsewhere, set the queue
@@ -39,7 +42,7 @@ export const playerStore = create((set, get) => ({
         currentPlaylist: playlist,
         currentIndex: validIndex,
         queue: newQueue,
-        isPlaying: true, // Autoplay when setting a new song
+        isPlaying: hasYouTubeId, // Only autoplay if has YouTube ID
       });
     }
     
@@ -61,22 +64,24 @@ export const playerStore = create((set, get) => ({
     const { currentIndex, queue } = get();
     if (currentIndex < queue.length - 1) {
       const nextIndex = currentIndex + 1;
+      const nextSong = queue[nextIndex];
       set({
         currentIndex: nextIndex,
-        currentSong: queue[nextIndex],
-        isPlaying: true,
+        currentSong: nextSong,
+        isPlaying: !!nextSong?.youtubeId, // Only autoplay if next song has YouTube ID
       });
     }
   },
 
   previousSong: () => {
-    const { currentIndex } = get();
+    const { currentIndex, queue } = get();
     if (currentIndex > 0) {
       const prevIndex = currentIndex - 1;
+      const prevSong = queue[prevIndex];
       set({
         currentIndex: prevIndex,
-        currentSong: get().queue[prevIndex],
-        isPlaying: true,
+        currentSong: prevSong,
+        isPlaying: !!prevSong?.youtubeId, // Only autoplay if previous song has YouTube ID
       });
     }
   },
@@ -99,12 +104,12 @@ export const playerStore = create((set, get) => ({
       newQueue.push(song);
       set({ queue: newQueue });
     } else {
-      // If no current song, set this as the current song and start playing
+      // If no current song, set this as the current song and start playing (only if has YouTube ID)
       set({
         currentSong: song,
         currentIndex: 0,
         queue: [song],
-        isPlaying: true,
+        isPlaying: !!song?.youtubeId, // Only autoplay if has YouTube ID
       });
     }
   },

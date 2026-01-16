@@ -264,6 +264,12 @@ async function processDiscogsArtists() {
         return;
       }
       
+      // Skip artists without a profile (before acquiring lock)
+      if (!profile || !profile.trim()) {
+        skipped++;
+        return;
+      }
+      
       // Wait if another artist is currently being processed
       // CRITICAL: Wait BEFORE incrementing processed to ensure sequential processing
       while (isProcessing) {
@@ -273,7 +279,7 @@ async function processDiscogsArtists() {
       // Process this artist immediately, waiting for DB to complete
       isProcessing = true;
       
-      // Only increment processed AFTER acquiring the lock
+      // Only increment processed AFTER acquiring the lock and passing validation
       processed++;
       const shouldLog = processed % 100 === 0;
       

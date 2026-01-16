@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { searchAPI } from '../api/api.js';
+import usePlayerStore from '../store/playerStore';
 
 export default function SearchBar() {
   const navigate = useNavigate();
+  const { addToQueue } = usePlayerStore();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState({ artists: [], songs: [] });
   const [isOpen, setIsOpen] = useState(false);
@@ -52,9 +54,10 @@ export default function SearchBar() {
 
   const handleResultClick = async (type, item) => {
     if (type === 'song') {
-      // For now, clicking songs does nothing - user flow to be determined
+      // Add song to queue
+      addToQueue(item);
       setIsOpen(false);
-      return;
+      setQuery(''); // Clear search after adding
     } else {
       // Navigate to artist page
       navigate(`/artist/${item.id}`);
@@ -108,7 +111,7 @@ export default function SearchBar() {
             </div>
 
             {/* Results */}
-            <div className="overflow-y-auto flex-1">
+            <div className="overflow-y-auto flex-1 min-h-0">
               {activeTab === 'songs' ? (
                 <div>
                   {results.songs.length === 0 ? (
@@ -118,7 +121,7 @@ export default function SearchBar() {
                       <button
                         key={song.id}
                         onClick={() => handleResultClick('song', song)}
-                        className="w-full px-4 py-3 text-left hover:bg-bg-hover transition-all duration-200 flex items-center gap-3 group"
+                        className="w-full px-4 py-3 text-left hover:bg-bg-hover transition-all duration-200 flex items-center gap-3 group cursor-pointer"
                       >
                         {song.thumbnailUrl && (
                           <img
@@ -130,6 +133,11 @@ export default function SearchBar() {
                         <div className="flex-1 min-w-0">
                           <div className="text-text-primary font-medium truncate group-hover:text-accent transition-colors">{song.title}</div>
                           <div className="text-text-muted text-sm truncate">{song.artist}</div>
+                        </div>
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0">
+                          <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                          </svg>
                         </div>
                       </button>
                     ))
@@ -144,9 +152,14 @@ export default function SearchBar() {
                       <button
                         key={artist.id}
                         onClick={() => handleResultClick('artist', artist)}
-                        className="w-full px-4 py-3 text-left hover:bg-bg-hover transition-all duration-200 group"
+                        className="w-full px-4 py-3 text-left hover:bg-bg-hover transition-all duration-200 flex items-center justify-between group cursor-pointer"
                       >
                         <div className="text-text-primary font-medium group-hover:text-accent transition-colors">{artist.name}</div>
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex-shrink-0">
+                          <svg className="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </div>
                       </button>
                     ))
                   )}

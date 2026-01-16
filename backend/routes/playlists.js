@@ -344,9 +344,9 @@ router.get('/', async (req, res) => {
     const playlists = await prisma.playlist.findMany({
       where: { userId },
       include: {
-        playlistSongs: {
+        PlaylistSong: {
           include: {
-            song: true,
+            Song: true,
           },
           orderBy: {
             position: 'asc',
@@ -358,7 +358,19 @@ router.get('/', async (req, res) => {
       },
     });
 
-    res.json({ playlists });
+    // artistIds is already stored as UUIDs in the Song model
+    const playlistsWithArtistIds = playlists.map((playlist) => ({
+      ...playlist,
+      PlaylistSong: playlist.PlaylistSong.map((playlistSong) => ({
+        ...playlistSong,
+        Song: {
+          ...playlistSong.Song,
+          artistIds: playlistSong.Song.artistIds || null,
+        },
+      })),
+    }));
+
+    res.json({ playlists: playlistsWithArtistIds });
   } catch (error) {
     console.error('Get playlists error:', error);
     res.status(500).json({ error: 'Failed to get playlists' });
@@ -377,9 +389,9 @@ router.get('/:id', async (req, res) => {
         userId,
       },
       include: {
-        playlistSongs: {
+        PlaylistSong: {
           include: {
-            song: true,
+            Song: true,
           },
           orderBy: {
             position: 'asc',
@@ -392,7 +404,19 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Playlist not found' });
     }
 
-    res.json({ playlist });
+    // artistIds is already stored as UUIDs in the Song model
+    const playlistWithArtistIds = {
+      ...playlist,
+      PlaylistSong: playlist.PlaylistSong.map((playlistSong) => ({
+        ...playlistSong,
+        Song: {
+          ...playlistSong.Song,
+          artistIds: playlistSong.Song.artistIds || null,
+        },
+      })),
+    };
+
+    res.json({ playlist: playlistWithArtistIds });
   } catch (error) {
     console.error('Get playlist error:', error);
     res.status(500).json({ error: 'Failed to get playlist' });
@@ -492,9 +516,9 @@ router.put('/:id', async (req, res) => {
       where: { id },
       data: updateData,
       include: {
-        playlistSongs: {
+        PlaylistSong: {
           include: {
-            song: true,
+            Song: true,
           },
           orderBy: {
             position: 'asc',
@@ -1090,7 +1114,7 @@ async function importPlaylistAsync(userId, playlistId, playlistName, youtubeUrl,
           // Emit Socket.io event for real-time update
           emitToUser(userId, 'playlist-song-added', {
             playlistId: playlist.id,
-            song: playlistSong.song,
+            Song: playlistSong.Song,
             position: i,
             totalSongs: videoIds.length,
             currentIndex: i + 1,
@@ -1199,7 +1223,7 @@ async function refreshYouTubePlaylistAsync(playlistId, userId, youtubePlaylistId
     // Step 1: Get existing playlist songs
     const existingPlaylistSongs = await prisma.playlistSong.findMany({
       where: { playlistId },
-      include: { song: true },
+      include: { Song: true },
       orderBy: { position: 'asc' },
     });
     const existingVideoIds = new Set(existingPlaylistSongs.map(ps => ps.song.youtubeId));
@@ -1265,7 +1289,7 @@ async function refreshYouTubePlaylistAsync(playlistId, userId, youtubePlaylistId
           // Emit Socket.io event for real-time update
           emitToUser(userId, 'playlist-song-added', {
             playlistId: playlistId,
-            song: playlistSong.song,
+            Song: playlistSong.Song,
             position: i,
             totalSongs: videoIds.length,
             currentIndex: i + 1,
@@ -1333,7 +1357,7 @@ async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
     // Step 1: Get existing playlist songs
     const existingPlaylistSongs = await prisma.playlistSong.findMany({
       where: { playlistId },
-      include: { song: true },
+      include: { Song: true },
       orderBy: { position: 'asc' },
     });
 
@@ -1406,7 +1430,7 @@ async function refreshSpotifyPlaylistAsync(playlistId, userId, spotifyUrl) {
           // Emit Socket.io event for real-time update
           emitToUser(userId, 'playlist-song-added', {
             playlistId: playlistId,
-            song: playlistSong.song,
+            Song: playlistSong.Song,
             position: i,
             totalSongs: spotifyData.songs.length,
             currentIndex: i + 1,
@@ -1573,7 +1597,7 @@ async function importSpotifyPlaylistAsync(userId, spotifyUrl, playlistName, exis
           // Emit Socket.io event for real-time update
           emitToUser(userId, 'playlist-song-added', {
             playlistId: playlist.id,
-            song: playlistSong.song,
+            Song: playlistSong.Song,
             position: i,
             totalSongs: spotifyData.songs.length,
             currentIndex: i + 1,

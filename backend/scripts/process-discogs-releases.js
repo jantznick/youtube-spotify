@@ -428,7 +428,7 @@ async function processDiscogsReleases() {
             lastUpdated: new Date(),
           };
 
-          // Upsert release
+            // Upsert release
           try {
             const result = await prisma.discogsRelease.upsert({
               where: { id: releaseData.id },
@@ -444,6 +444,9 @@ async function processDiscogsReleases() {
               },
               create: releaseData,
             });
+
+            // Store release UUID for later use
+            const releaseUuid = result.id;
 
             const wasNew = result.createdAt.getTime() === result.updatedAt.getTime();
             if (wasNew) {
@@ -479,30 +482,28 @@ async function processDiscogsReleases() {
               console.log(`   YouTube Videos: ${debugRecord.videos}`);
             }
 
-            // Process release artists
+            // Process release artists and collect their UUIDs
+            const releaseArtistUuids = [];
+            const releaseArtistNames = artists
+              .filter(a => a.name)
+              .map(a => a.name.trim());
+            
             for (const artist of artists) {
-              if (!artist.id || !artist.name) continue;
+              if (!artist.name) continue;
 
               const artistName = artist.name.trim();
-              const artistDiscogsId = artist.id;
 
-              // Find artist by discogsId or name
-              let dbArtist = await prisma.discogsArtist.findFirst({
-                where: {
-                  OR: [
-                    { discogsId: artistDiscogsId },
-                    { name: artistName },
-                  ],
-                },
+              // Find artist by name only (we don't care about discogsId)
+              let dbArtist = await prisma.discogsArtist.findUnique({
+                where: { name: artistName },
                 select: { id: true },
               });
 
-              // Auto-create missing artist with minimal data
+              // Auto-create missing artist with minimal data (name only)
               if (!dbArtist) {
                 try {
                   dbArtist = await prisma.discogsArtist.create({
                     data: {
-                      discogsId: artistDiscogsId,
                       name: artistName,
                       lastUpdated: new Date(),
                     },
@@ -511,17 +512,12 @@ async function processDiscogsReleases() {
                   
                   // Log auto-creation (limit to avoid spam)
                   if (created < 10 || created % 1000 === 0) {
-                    console.log(`   ⚠️  Auto-created missing artist: "${artistName}" (Discogs ID: ${artistDiscogsId})`);
+                    console.log(`   ⚠️  Auto-created missing artist: "${artistName}"`);
                   }
                 } catch (error) {
                   // If creation fails (e.g., duplicate name), try to find again
-                  dbArtist = await prisma.discogsArtist.findFirst({
-                    where: {
-                      OR: [
-                        { discogsId: artistDiscogsId },
-                        { name: artistName },
-                      ],
-                    },
+                  dbArtist = await prisma.discogsArtist.findUnique({
+                    where: { name: artistName },
                     select: { id: true },
                   });
                   
@@ -535,19 +531,22 @@ async function processDiscogsReleases() {
                 }
               }
 
-              // Create/update release-artist relationship
+              // Store UUID for later use with tracks
               if (dbArtist) {
+                releaseArtistUuids.push(dbArtist.id);
+
+                // Create/update release-artist relationship
                 try {
                   await prisma.discogsReleaseArtist.upsert({
                     where: {
                       releaseId_artistId: {
-                        releaseId: releaseId,
+                        releaseId: releaseUuid,
                         artistId: dbArtist.id,
                       },
                     },
                     update: {},
                     create: {
-                      releaseId: releaseId,
+                      releaseId: releaseUuid,
                       artistId: dbArtist.id,
                     },
                   });
@@ -584,20 +583,73 @@ async function processDiscogsReleases() {
               const trackArtistNames = track.artists
                 .filter(a => a.name)
                 .map(a => a.name.trim());
-              const releaseArtistNames = artists
-                .filter(a => a.name)
-                .map(a => a.name.trim());
               const songArtistNames = trackArtistNames.length > 0 ? trackArtistNames : releaseArtistNames;
               const songArtist = songArtistNames.join(', ') || null;
               
-              // Get artist IDs for discogsArtistIds
-              const trackArtistIds = track.artists
-                .filter(a => a.id)
-                .map(a => a.id);
-              const releaseArtistIds = artists
-                .filter(a => a.id)
-                .map(a => a.id);
-              const discogsArtistIds = trackArtistIds.length > 0 ? trackArtistIds : releaseArtistIds;
+              // Get track artist string (for comma-splitting logic)
+              const trackArtistString = trackArtistNames.length > 0 
+                ? trackArtistNames.join(', ')
+                : releaseArtistNames.join(', ');
+              
+              // Get release artist string for comparison
+              const releaseArtistString = releaseArtistNames.join(', ');
+              
+              // Parse artist names: if track artist matches release artist, don't split (it's a band name with comma)
+              // Otherwise, split by comma (multiple artists)
+              let artistNamesToProcess = [];
+              if (trackArtistString && trackArtistString === releaseArtistString) {
+                // Matches release artist - treat as single artist (don't split)
+                artistNamesToProcess = [trackArtistString];
+              } else if (trackArtistString) {
+                // Doesn't match - split by comma
+                artistNamesToProcess = trackArtistString.split(',').map(n => n.trim()).filter(Boolean);
+              } else {
+                // No track artists, use release artists
+                artistNamesToProcess = releaseArtistNames;
+              }
+              
+              // Get or create artist UUIDs for this track
+              const trackArtistUuids = [];
+              for (const artistName of artistNamesToProcess) {
+                if (!artistName) continue;
+                
+                // Find artist by name
+                let dbArtist = await prisma.discogsArtist.findUnique({
+                  where: { name: artistName },
+                  select: { id: true },
+                });
+                
+                // Auto-create missing artist with minimal data (name only)
+                if (!dbArtist) {
+                  try {
+                    dbArtist = await prisma.discogsArtist.create({
+                      data: {
+                        name: artistName,
+                        lastUpdated: new Date(),
+                      },
+                      select: { id: true },
+                    });
+                  } catch (error) {
+                    // If creation fails, try to find again (might have been created concurrently)
+                    dbArtist = await prisma.discogsArtist.findUnique({
+                      where: { name: artistName },
+                      select: { id: true },
+                    });
+                    
+                    if (!dbArtist) {
+                      if (errors < 10) {
+                        console.error(`   ❌ Failed to create/find track artist "${artistName}":`, error.message);
+                      }
+                      errors++;
+                      continue; // Skip this artist
+                    }
+                  }
+                }
+                
+                if (dbArtist) {
+                  trackArtistUuids.push(dbArtist.id);
+                }
+              }
               
               // Try to match YouTube video to this track (by title similarity)
               let matchedVideo = null;
@@ -616,9 +668,9 @@ async function processDiscogsReleases() {
                 artist: songArtist,
                 youtubeId: matchedVideo?.youtubeId || null,
                 duration: track.duration ? parseDuration(track.duration) : null,
-                discogsReleaseId: releaseId,
+                discogsReleaseId: releaseUuid,
                 discogsTrackPosition: track.position?.trim() || null,
-                discogsArtistIds: discogsArtistIds.length > 0 ? discogsArtistIds : null,
+                artistIds: trackArtistUuids.length > 0 ? trackArtistUuids : null,
                 discogsExtraArtists: track.extraArtists.length > 0 ? track.extraArtists : null,
                 discogsGenres: genres,
                 discogsStyles: styles,
@@ -673,7 +725,7 @@ async function processDiscogsReleases() {
                       duration: songData.duration || existingSong.duration,
                       discogsReleaseId: songData.discogsReleaseId,
                       discogsTrackPosition: songData.discogsTrackPosition,
-                      discogsArtistIds: songData.discogsArtistIds,
+                      artistIds: songData.artistIds,
                       discogsExtraArtists: songData.discogsExtraArtists,
                       discogsGenres: songData.discogsGenres,
                       discogsStyles: songData.discogsStyles,

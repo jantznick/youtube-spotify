@@ -151,7 +151,7 @@ model Song {
   duration             Int?
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
-  discogsArtistIds     Json?
+  artistIds            Json?
   discogsCountry       String?
   discogsExtraArtists  Json?
   discogsFormat        String?

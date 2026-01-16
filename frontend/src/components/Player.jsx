@@ -231,6 +231,18 @@ function Player() {
     }
   };
 
+  const handleArtistClick = (e, song) => {
+    e.stopPropagation();
+    if (!song) return;
+    
+    // Get the first artist ID from artistIds if available
+    const artistIds = song.artistIds;
+    if (artistIds && Array.isArray(artistIds) && artistIds.length > 0) {
+      // Navigate to the first artist
+      navigate(`/artist/${artistIds[0]}`);
+    }
+  };
+
   // Show toast and autoplay when song changes
   useEffect(() => {
     if (currentSong) {
@@ -271,6 +283,8 @@ function Player() {
     return null;
   }
 
+  const hasYouTubeId = !!currentSong.youtubeId;
+
   // Single container with single YouTube component - just changes position/size
   return (
     <div
@@ -285,9 +299,31 @@ function Player() {
           <div className="flex items-start justify-between mb-3 gap-2">
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-text-primary truncate text-sm sm:text-base">{currentSong.title}</div>
-              <div className="text-xs sm:text-sm text-text-muted truncate">
-                {currentSong.artist || 'Unknown Artist'}
-              </div>
+              {currentSong.artistIds && Array.isArray(currentSong.artistIds) && currentSong.artistIds.length > 0 ? (
+                <div className="text-xs sm:text-sm text-text-muted truncate">
+                  {currentSong.artistIds.length === 1 ? (
+                    <button
+                      onClick={(e) => handleArtistClick(e, currentSong)}
+                      className="hover:text-accent transition-colors cursor-pointer"
+                      title={`View ${currentSong.artist || 'Unknown Artist'}`}
+                    >
+                      {currentSong.artist || 'Unknown Artist'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => handleArtistClick(e, currentSong)}
+                      className="hover:text-accent transition-colors cursor-pointer"
+                      title={`View ${currentSong.artist || 'Unknown Artist'} (and ${currentSong.artistIds.length - 1} more)`}
+                    >
+                      {currentSong.artist || 'Unknown Artist'}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs sm:text-sm text-text-muted truncate">
+                  {currentSong.artist || 'Unknown Artist'}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
@@ -321,28 +357,69 @@ function Player() {
           </div>
         )}
 
-        {/* Single YouTube component - always rendered, just resized */}
+        {/* YouTube component or "Coming Soon" message */}
         <div className={isMinimized ? 'w-full' : 'mb-3 rounded-lg overflow-hidden aspect-video'}>
-          <YouTube
-            videoId={currentSong.youtubeId}
-            opts={playerOpts}
-            onReady={handleReady}
-            onStateChange={handleStateChange}
-            key={currentSong.youtubeId}
-            className="w-full h-full"
-          />
+          {hasYouTubeId ? (
+            <YouTube
+              videoId={currentSong.youtubeId}
+              opts={playerOpts}
+              onReady={handleReady}
+              onStateChange={handleStateChange}
+              key={currentSong.youtubeId}
+              className="w-full h-full"
+            />
+          ) : (
+            <div className="w-full h-full bg-bg-primary flex flex-col items-center justify-center p-6 text-center">
+              {currentSong.thumbnailUrl && (
+                <img
+                  src={currentSong.thumbnailUrl}
+                  alt={currentSong.title}
+                  className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-lg mb-4 opacity-50"
+                />
+              )}
+              <div className="text-text-primary font-medium mb-2">Coming Soon</div>
+              <div className="text-text-muted text-sm">
+                This song is not available yet. Navigate to the next song to continue.
+              </div>
+            </div>
+          )}
         </div>
 
         {isMinimized && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 flex items-center justify-between">
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-white truncate">{currentSong.title}</div>
-              <div className="text-xs text-white/70 truncate">{currentSong.artist || 'Unknown Artist'}</div>
+              {currentSong.artistIds && Array.isArray(currentSong.artistIds) && currentSong.artistIds.length > 0 ? (
+                <div className="text-xs text-white/70 truncate">
+                  {currentSong.artistIds.length === 1 ? (
+                    <button
+                      onClick={(e) => handleArtistClick(e, currentSong)}
+                      className="hover:text-white transition-colors cursor-pointer"
+                      title={`View ${currentSong.artist || 'Unknown Artist'}`}
+                    >
+                      {currentSong.artist || 'Unknown Artist'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => handleArtistClick(e, currentSong)}
+                      className="hover:text-white transition-colors cursor-pointer"
+                      title={`View ${currentSong.artist || 'Unknown Artist'} (and ${currentSong.artistIds.length - 1} more)`}
+                    >
+                      {currentSong.artist || 'Unknown Artist'}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-white/70 truncate">
+                  {currentSong.artist || 'Unknown Artist'}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-1 ml-2">
               <button
                 onClick={togglePlay}
-                className="w-6 h-6 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors"
+                disabled={!hasYouTubeId}
+                className="w-6 h-6 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isPlaying ? (
                   <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -380,7 +457,8 @@ function Player() {
             </button>
             <button
               onClick={togglePlay}
-              className="flex-1 h-8 sm:h-9 bg-primary text-white rounded-md flex items-center justify-center hover:bg-primary-dark transition-all font-medium text-xs sm:text-sm"
+              disabled={!hasYouTubeId}
+              className="flex-1 h-8 sm:h-9 bg-primary text-white rounded-md flex items-center justify-center hover:bg-primary-dark transition-all font-medium text-xs sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isPlaying ? (
                 <>
