@@ -8,10 +8,21 @@ export const playerStore = create((set, get) => ({
   queue: [],
 
   setCurrentSong: (song, playlist = null, index = 0, preserveQueue = false) => {
+    const currentState = get();
+    console.log('[playerStore setCurrentSong] Called with:', {
+      songTitle: song?.title,
+      preserveQueue,
+      currentQueueLength: currentState.queue.length,
+      currentSong: currentState.currentSong?.title || 'none',
+      playlist: playlist?.name || 'none',
+      index,
+    });
+    
     if (preserveQueue) {
       // When playing from queue, just update the current song and index
       const { queue } = get();
       const validIndex = Math.max(0, Math.min(index, queue.length - 1));
+      console.log('[playerStore setCurrentSong] preserveQueue=true, updating song/index, keeping queue length:', queue.length);
       set({
         currentSong: song,
         currentPlaylist: playlist,
@@ -22,6 +33,7 @@ export const playerStore = create((set, get) => ({
       // When playing from playlist or elsewhere, set the queue
       const newQueue = playlist?.playlistSongs?.map((ps) => ps.song) || [song];
       const validIndex = Math.max(0, Math.min(index, newQueue.length - 1));
+      console.log('[playerStore setCurrentSong] preserveQueue=false, REPLACING queue with length:', newQueue.length);
       set({
         currentSong: song,
         currentPlaylist: playlist,
@@ -30,6 +42,15 @@ export const playerStore = create((set, get) => ({
         isPlaying: true, // Autoplay when setting a new song
       });
     }
+    
+    // Log state after update
+    setTimeout(() => {
+      const afterState = get();
+      console.log('[playerStore setCurrentSong] After update:', {
+        queueLength: afterState.queue.length,
+        currentSong: afterState.currentSong?.title || 'none',
+      });
+    }, 50);
   },
 
   play: () => set({ isPlaying: true }),

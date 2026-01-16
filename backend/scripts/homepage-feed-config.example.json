@@ -1,0 +1,24 @@
+{
+  "homePageFeed": [
+    {
+      "genre": "Pump-Up Pop",
+      "tagline": "Elevate your mood (and your heart rate) with these pop anthems",
+      "playlistUrl": "https://www.youtube.com/playlist?list=RDCLAK5uy_mVJ3RRi_YBfUJnZnQxLAedQQcXHujbUcg&playnext=1&index=1"
+    },
+    {
+      "genre": "Country Tailgate",
+      "tagline": "Get ready to tailgate with the best in country music",
+      "playlistUrl": "https://www.youtube.com/playlist?list=PLLDVfSPfze0tExFaJFV09hr_EnRYgi_Fo"
+    },
+    {
+      "genre": "Cuffin Season",
+      "tagline": "The perfect playlist for your cozy nights in",
+      "playlistUrl": "https://www.youtube.com/playlist?list=PLp6_QWqDFsYLj3jNSVoyxbqiDsOW4mtza"
+    },
+    {
+      "genre": "Six Mix",
+      "tagline": "Best songs from the Broadway hit Six",
+      "playlistUrl": "https://open.spotify.com/playlist/37i9dQZF1EIWYxA8zfXiSt"
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
-import usePlayerStore from '../store/playerStore';
-import { songsAPI, playlistsAPI } from '../api/api';
+import usePlayerStore, { playerStore } from '../store/playerStore';
+import { feedAPI } from '../api/api';
 import SongList from '../components/SongList';
 import NotificationModal from '../components/NotificationModal';
 import AddSongModal from '../components/AddSongModal';
@@ -10,7 +10,7 @@ import { useAuthModal } from '../contexts/AuthModalContext';
 
 function Explore() {
   const { openAuthModal } = useAuthModal();
-  const [songs, setSongs] = useState([]);
+  const [homePageFeed, setHomePageFeed] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -27,33 +27,35 @@ function Explore() {
 
   const loadData = async () => {
     try {
-      const songsData = await songsAPI.getAll();
-      setSongs(songsData.songs);
+      const feedData = await feedAPI.getHomePage();
+      setHomePageFeed(feedData.homePageFeed || []);
     } catch (error) {
       console.error('Failed to load data:', error);
-      showNotification('Failed to load songs', 'error');
+      showNotification('Failed to load feed', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   const handlePlaySong = (song) => {
-    // If there's already a queue, preserve it and just play the song
-    if (queue.length > 0) {
-      const songIndex = queue.findIndex((s) => s.id === song.id);
-      if (songIndex !== -1) {
-        // Song is in queue, play it from there
-        setCurrentSong(song, null, songIndex, true);
-      } else {
-        // Song not in queue, add it and play
-        const newQueue = [...queue, song];
-        setQueue(newQueue);
-        setCurrentSong(song, null, newQueue.length - 1, true);
-      }
-    } else {
-      // No queue, just play the single song (don't create a queue of all songs)
-      setCurrentSong(song, null, 0, false);
+    const state = playerStore.getState();
+    
+    // Take currently playing song and put it at start of queue
+    let newQueue = [...state.queue];
+    if (state.currentSong) {
+      // Add it to the front
+      newQueue = [state.currentSong, ...newQueue];
     }
+
+    newQueue = [song, ...newQueue];
+    
+    // Play the new song
+    playerStore.setState({
+      queue: newQueue,
+      currentSong: song,
+      isPlaying: true,
+      currentIndex: 0,
+    });
   };
 
   const handleImportPlaylist = async (url) => {
@@ -114,21 +116,78 @@ function Explore() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 lg:py-8">
         <div className="mb-4 sm:mb-6 lg:mb-8">
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-text-primary mb-1 sm:mb-2">
-            Explore Music
+            Discover
           </h1>
           <p className="text-xs sm:text-sm lg:text-base text-text-muted">
-            {songs.length} {songs.length === 1 ? 'song' : 'songs'} available
+            Explore music by genre
           </p>
         </div>
 
-        <SongList
-          songs={songs}
-          onPlay={handlePlaySong}
-          playlists={[]}
-          onAddToPlaylist={() => {
-            showNotification('Please sign in to add songs to playlists', 'info');
-          }}
-        />
+        {homePageFeed.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-text-muted">No content available yet. Check back soon!</p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {homePageFeed.map((feedItem) => (
+              <div key={feedItem.genre} className="mb-8">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-1">
+                      <h2 className="text-2xl font-bold text-text-primary">{feedItem.genre}</h2>
+                      <button
+                        onClick={() => {
+                          if (feedItem.songs.length > 0) {
+                            // Add all songs to queue, then play the first one
+                            const newQueue = queue.length > 0 
+                              ? [...queue, ...feedItem.songs]
+                              : feedItem.songs;
+                            setQueue(newQueue);
+                            const startIndex = queue.length > 0 ? queue.length : 0;
+                            setCurrentSong(feedItem.songs[0], null, startIndex, true);
+                          }
+                        }}
+                        className="px-4 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition text-sm font-medium flex items-center gap-2"
+                        title="Play all songs from this playlist"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                        </svg>
+                        Play Playlist
+                      </button>
+                    </div>
+                    {feedItem.tagline && (
+                      <div className="flex items-center gap-2">
+                        {feedItem.sourceType && (
+                          <div className="flex items-center">
+                            {feedItem.sourceType === 'youtube' ? (
+                              <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.42 1.56-.299.421-1.02.599-1.559.3z"/>
+                              </svg>
+                            )}
+                          </div>
+                        )}
+                        <p className="text-sm text-text-muted">{feedItem.tagline}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <SongList
+                  songs={feedItem.songs}
+                  onPlay={handlePlaySong}
+                  playlists={[]}
+                  onAddToPlaylist={() => {
+                    showNotification('Please sign in to add songs to playlists', 'info');
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Import Modal */}

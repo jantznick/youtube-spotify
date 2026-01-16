@@ -9,6 +9,7 @@ import Landing from './pages/Landing';
 import Explore from './pages/Explore';
 import ForgotPassword from './pages/ForgotPassword';
 import NotFound from './pages/NotFound';
+import Admin from './pages/Admin';
 import Player from './components/Player';
 import AuthModal from './components/AuthModal';
 import { AuthModalContext } from './contexts/AuthModalContext';
@@ -29,7 +30,7 @@ function ResetPasswordRoute() {
 }
 
 function App() {
-  const { setUser, setLoading, isAuthenticated } = useAuthStore();
+  const { setUser, setLoading, isAuthenticated, isLoading } = useAuthStore();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState('login');
   const location = useLocation();
@@ -123,6 +124,20 @@ function App() {
         <Route
           path="/explore"
           element={<Explore />}
+        />
+        <Route
+          path="/admin"
+          element={
+            isLoading ? (
+              <div className="flex items-center justify-center h-screen">
+                <div className="text-xl">Loading...</div>
+              </div>
+            ) : isAuthenticated ? (
+              <Admin />
+            ) : (
+              <Navigate to="/" />
+            )
+          }
         />
         <Route
           path="*"

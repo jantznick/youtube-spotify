@@ -13,6 +13,8 @@ import authRoutes from './routes/auth.js';
 import songRoutes from './routes/songs.js';
 import playlistRoutes from './routes/playlists.js';
 import userRoutes from './routes/user.js';
+import feedRoutes from './routes/feed.js';
+import adminRoutes from './routes/admin.js';
 
 dotenv.config();
 
@@ -201,12 +203,62 @@ const requireAuth = (req, res, next) => {
   }
 };
 
+const requireAdmin = async (req, res, next) => {
+  console.log('[ADMIN] Checking admin access for request:', req.path);
+  
+  if (!req.session || !req.session.userId) {
+    console.log('[ADMIN] No session or userId');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.session.userId },
+      select: { email: true },
+    });
+
+    console.log('[ADMIN] User found:', { userId: req.session.userId, email: user?.email });
+
+    if (!user || !user.email) {
+      console.log('[ADMIN] User has no email');
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+
+    // Check if user's email is in ADMIN_EMAIL env variable
+    const adminEmails = process.env.ADMIN_EMAIL;
+    console.log('[ADMIN] ADMIN_EMAIL env var:', adminEmails ? 'SET' : 'NOT SET');
+    
+    if (!adminEmails) {
+      console.log('[ADMIN] ADMIN_EMAIL not configured');
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+
+    const emailList = adminEmails.split(',').map(email => email.trim().toLowerCase());
+    const userEmail = user.email.toLowerCase();
+    
+    console.log('[ADMIN] Checking email:', userEmail, 'against list:', emailList);
+
+    if (!emailList.includes(userEmail)) {
+      console.log('[ADMIN] Email not in admin list');
+      return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+
+    console.log('[ADMIN] Access granted');
+    next();
+  } catch (error) {
+    console.error('[ADMIN] Admin check error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 // Routes
 app.use('/api/auth', authRoutes);
 // Songs GET endpoint is public, but PUT requires auth
 app.use('/api/songs', songRoutes);
+app.use('/api/feed', feedRoutes);
 app.use('/api/playlists', requireAuth, playlistRoutes);
 app.use('/api/user', requireAuth, userRoutes);
+app.use('/api/admin', requireAuth, requireAdmin, adminRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
