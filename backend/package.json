@@ -19,6 +19,7 @@
     "discogs:process:artists": "node scripts/process-discogs-artists.js",
     "discogs:process:releases": "node scripts/process-discogs-releases.js",
     "discogs:process:releases:debug": "node scripts/process-discogs-releases.js --debug",
+    "db:add-search-indexes": "node scripts/add-search-indexes.js",
     "db:reset": "npx prisma migrate reset --force"
   },
   "keywords": [],

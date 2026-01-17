@@ -109,21 +109,21 @@ async function processDiscogsReleases() {
   const fileSizeMB = (fileSize / (1024 * 1024)).toFixed(2);
   console.log(`📁 File: ${xmlFileName} (${fileSizeMB}MB)\n`);
 
-  // Stats
-  let processed = (isDebugMode ? 0 : (syncRecord.releasesProcessed || 0));
+  // Stats - always start fresh (counters reset on each run)
+  let processed = 0;
   let created = 0;
   let updated = 0;
   let errors = 0;
   let skipped = 0;
   let tracksProcessed = 0;
-  let songsUpserted = syncRecord.songsUpserted || 0;
+  let songsUpserted = 0;
   const startTime = Date.now();
   
   // Timing metrics
   let totalProcessingTime = 0;
   let slowestReleaseTime = 0;
   let slowestReleaseTitle = null;
-  let lastSyncUpdate = processed;
+  let lastSyncUpdate = 0;
 
   // Create XML parser
   const parser = new XMLParser({
@@ -169,7 +169,8 @@ async function processDiscogsReleases() {
         };
         await processRelease(releaseBuffer, parser, stats);
         
-        // Update local variables from stats
+        // Update local variables from stats (including processed which is incremented inside processRelease)
+        processed = stats.processed;
         created = stats.created;
         updated = stats.updated;
         errors = stats.errors;
@@ -183,7 +184,6 @@ async function processDiscogsReleases() {
         
         releaseBuffer = '';
         inRelease = false;
-        processed++;
         
         if (isDebugMode && processed >= 3) {
           break;
@@ -203,7 +203,8 @@ async function processDiscogsReleases() {
         };
         await processRelease(releaseBuffer, parser, stats);
         
-        // Update local variables from stats
+        // Update local variables from stats (including processed which is incremented inside processRelease)
+        processed = stats.processed;
         created = stats.created;
         updated = stats.updated;
         errors = stats.errors;
@@ -217,7 +218,6 @@ async function processDiscogsReleases() {
         
         releaseBuffer = '';
         inRelease = false;
-        processed++;
         
         if (isDebugMode && processed >= 3) {
           break;
@@ -283,16 +283,16 @@ async function processRelease(releaseXml, parser, stats) {
     }
 
     const releaseId = release.id;
-    const releaseTitle = release.title.trim();
+    const releaseTitle = String(release.title).trim();
     const releaseStatus = release.status;
 
     // Extract release data
     const genres = release.genres?.genre ? (Array.isArray(release.genres.genre) ? release.genres.genre : [release.genres.genre]) : [];
     const styles = release.styles?.style ? (Array.isArray(release.styles.style) ? release.styles.style : [release.styles.style]) : [];
-    const released = release.released?.trim() || null;
-    const dataQuality = release.dataQuality?.trim() || null;
-    const masterId = release.masterId?.trim() || null;
-    const country = release.country?.trim() || null;
+    const released = release.released ? String(release.released).trim() : null;
+    const dataQuality = release.dataQuality ? String(release.dataQuality).trim() : null;
+    const masterId = release.masterId ? String(release.masterId).trim() : null;
+    const country = release.country ? String(release.country).trim() : null;
 
     // Extract artists
     const artists = [];
@@ -300,7 +300,7 @@ async function processRelease(releaseXml, parser, stats) {
       const artistArray = Array.isArray(release.artists.artist) ? release.artists.artist : [release.artists.artist];
       for (const artist of artistArray) {
         if (artist.name) {
-          artists.push({ name: artist.name.trim() });
+          artists.push({ name: String(artist.name).trim() });
         }
       }
     }
@@ -316,7 +316,7 @@ async function processRelease(releaseXml, parser, stats) {
             const trackArtistArray = Array.isArray(track.artists.artist) ? track.artists.artist : [track.artists.artist];
             for (const artist of trackArtistArray) {
               if (artist.name) {
-                trackArtists.push({ name: artist.name.trim() });
+                trackArtists.push({ name: String(artist.name).trim() });
               }
             }
           }
@@ -326,15 +326,15 @@ async function processRelease(releaseXml, parser, stats) {
             const extraArtistArray = Array.isArray(track.extraartists.artist) ? track.extraartists.artist : [track.extraartists.artist];
             for (const artist of extraArtistArray) {
               extraArtists.push({
-                name: artist.name?.trim() || null,
-                role: artist.role || null,
+                name: artist.name ? String(artist.name).trim() : null,
+                role: artist.role ? String(artist.role).trim() : null,
               });
             }
           }
           
           tracks.push({
             position: track.position ? String(track.position).trim() : null,
-            title: track.title.trim(),
+            title: String(track.title).trim(),
             duration: track.duration ? String(track.duration).trim() : null,
             artists: trackArtists,
             extraArtists: extraArtists,
@@ -352,31 +352,44 @@ async function processRelease(releaseXml, parser, stats) {
         if (youtubeId) {
           videos.push({
             youtubeId: youtubeId,
-            title: video.title?.trim() || null,
+            title: video.title ? String(video.title).trim() : null,
             duration: video.duration ? parseInt(video.duration) : null,
           });
         }
       }
     }
 
-    // Prepare release data
-    const releaseData = {
-      title: releaseTitle,
-      status: releaseStatus,
-      genres: genres.length > 0 ? genres : null,
-      styles: styles.length > 0 ? styles : null,
-      released: released,
-      dataQuality: dataQuality,
-      youtubeVideos: videos.length > 0 ? videos : null,
-      lastUpdated: new Date(),
-    };
-
-    const result = await prisma.discogsRelease.create({
-      data: releaseData,
+    // Check if release already exists (by title to prevent duplicates)
+    let existingRelease = await prisma.discogsRelease.findFirst({
+      where: { title: releaseTitle },
+      select: { id: true },
     });
 
-    const releaseUuid = result.id;
-    stats.created++;
+    let releaseUuid;
+    if (existingRelease) {
+      // Use existing release UUID, but still process songs
+      releaseUuid = existingRelease.id;
+      stats.skipped++;
+    } else {
+      // Prepare release data
+      const releaseData = {
+        title: releaseTitle,
+        status: releaseStatus,
+        genres: genres.length > 0 ? genres : null,
+        styles: styles.length > 0 ? styles : null,
+        released: released,
+        dataQuality: dataQuality,
+        youtubeVideos: videos.length > 0 ? videos : null,
+        lastUpdated: new Date(),
+      };
+
+      const result = await prisma.discogsRelease.create({
+        data: releaseData,
+      });
+
+      releaseUuid = result.id;
+      stats.created++;
+    }
 
     // Process release artists
     const releaseArtistUuids = [];
@@ -385,7 +398,7 @@ async function processRelease(releaseXml, parser, stats) {
     for (const artist of artists) {
       if (!artist.name) continue;
 
-      const artistName = artist.name.trim();
+      const artistName = String(artist.name).trim();
 
       let dbArtist = await prisma.discogsArtist.findUnique({
         where: { name: artistName },
@@ -514,17 +527,20 @@ async function processRelease(releaseXml, parser, stats) {
       // Try to match YouTube video
       let matchedVideo = null;
       if (videos.length > 0 && track.title) {
-        const trackTitleLower = track.title.toLowerCase().trim();
+        const trackTitleLower = String(track.title).toLowerCase().trim();
         matchedVideo = videos.find(v => 
-          v.title && v.title.toLowerCase().includes(trackTitleLower)
-        ) || videos.find(v => 
-          v.title && trackTitleLower.includes(v.title.toLowerCase().split(' - ').pop()?.trim() || '')
-        );
+          v.title && String(v.title).toLowerCase().includes(trackTitleLower)
+        ) || videos.find(v => {
+          if (!v.title) return false;
+          const videoTitleLower = String(v.title).toLowerCase();
+          const lastPart = videoTitleLower.split(' - ').pop();
+          return lastPart && trackTitleLower.includes(String(lastPart).trim());
+        });
       }
       
       // Prepare song data
       const songData = {
-        title: track.title.trim(),
+        title: String(track.title).trim(),
         artist: songArtist,
         youtubeId: matchedVideo?.youtubeId || null,
         duration: track.duration ? parseDuration(track.duration) : null,
@@ -605,6 +621,9 @@ async function processRelease(releaseXml, parser, stats) {
         stats.errors++;
       }
     }
+
+    // Increment processed counter (after successful processing)
+    stats.processed++;
 
     // Update sync record periodically
     if (stats.processed - stats.lastSyncUpdate >= 1000) {

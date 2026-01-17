@@ -23,15 +23,23 @@ router.get('/', async (req, res) => {
           mode: 'insensitive',
         },
       },
-      take: 15,
-      orderBy: {
-        name: 'asc',
-      },
+      take: 25, // Fetch more to sort by popularity, then limit to 15
       select: {
         id: true,
         name: true,
+        profile: true,
       },
     });
+
+    // Sort by profile length (popularity indicator) and take top 15
+    const sortedArtists = artists
+      .sort((a, b) => {
+        const aLength = a.profile ? a.profile.length : 0;
+        const bLength = b.profile ? b.profile.length : 0;
+        return bLength - aLength; // Descending order (longer = more popular)
+      })
+      .slice(0, 15)
+      .map(({ profile, ...rest }) => rest); // Remove profile from response
 
     // Search songs by title or artist (case-insensitive, limit 15)
     const songs = await prisma.song.findMany({
@@ -67,8 +75,8 @@ router.get('/', async (req, res) => {
       },
     });
 
-    // Format results
-    const formattedArtists = artists.map((artist) => ({
+    // Format results (already sorted and limited above)
+    const formattedArtists = sortedArtists.map((artist) => ({
       id: artist.id,
       name: artist.name,
     }));

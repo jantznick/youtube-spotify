@@ -120,6 +120,9 @@ async function processDiscogsArtists() {
   console.log(`🚀 Starting line-by-line processing...\n`);
   console.log(`   Reading from: ${xmlPath}\n`);
 
+  let artistBuffer = '';
+  let inArtist = false;
+
   // Process line by line
   for await (const line of rl) {
     // Skip empty lines and XML header/footer
@@ -127,107 +130,250 @@ async function processDiscogsArtists() {
       continue;
     }
 
-    // Each line should be a complete <artist>...</artist> element
-    if (line.trim().startsWith('<artist') && line.trim().endsWith('</artist>')) {
-      try {
-        // Parse the XML line
-        const parsed = parser.parse(line);
-        const artist = parsed.artist;
-
-        if (!artist || !artist.name) {
-          skipped++;
-          continue;
-        }
-
-        const artistName = artist.name.trim();
-        
-        // Skip artists without a profile
-        if (!artist.profile || !artist.profile.trim()) {
-          skipped++;
-          continue;
-        }
-
-        const artistStartTime = Date.now();
-        processed++;
-
+    // Check if line starts an artist
+    if (line.trim().startsWith('<artist')) {
+      inArtist = true;
+      artistBuffer = line;
+      
+      // Check if it's complete on one line
+      if (line.trim().endsWith('</artist>')) {
+        // Process this artist
         try {
-          // Prepare data
-          const artistData = {
-            name: artistName,
-            realname: artist.realname?.trim() || null,
-            profile: artist.profile?.trim() || null,
-            dataQuality: artist.dataQuality?.trim() || null,
-            urls: artist.urls?.url ? (Array.isArray(artist.urls.url) ? artist.urls.url : [artist.urls.url]) : null,
-            nameVariations: artist.namevariations?.name ? (Array.isArray(artist.namevariations.name) ? artist.namevariations.name : [artist.namevariations.name]) : null,
-            aliases: artist.aliases?.name ? (Array.isArray(artist.aliases.name) ? artist.aliases.name.map(n => ({ name: n })) : [{ name: artist.aliases.name }]) : null,
-            members: artist.members?.name ? (Array.isArray(artist.members.name) ? artist.members.name.map(n => ({ name: n })) : [{ name: artist.members.name }]) : null,
-            groups: artist.groups?.name ? (Array.isArray(artist.groups.name) ? artist.groups.name.map(n => ({ name: n })) : [{ name: artist.groups.name }]) : null,
-            lastUpdated: new Date(),
-          };
+          // Parse the XML
+          const parsed = parser.parse(artistBuffer);
+          const artist = parsed.artist;
 
-          const existingArtist = await prisma.discogsArtist.findUnique({
-            where: { name: artistData.name },
-            select: { id: true },
-          });
-          
-          await prisma.discogsArtist.upsert({
-            where: { name: artistData.name },
-            update: {
-              realname: artistData.realname,
-              profile: artistData.profile,
-              dataQuality: artistData.dataQuality,
-              urls: artistData.urls,
-              nameVariations: artistData.nameVariations,
-              aliases: artistData.aliases,
-              members: artistData.members,
-              groups: artistData.groups,
-              lastUpdated: artistData.lastUpdated,
-            },
-            create: artistData,
-          });
-          
-          if (!existingArtist) {
-            created++;
-          } else {
-            updated++;
+          if (!artist || !artist.name) {
             skipped++;
+            artistBuffer = '';
+            inArtist = false;
+            continue;
           }
 
-          // Update sync record periodically
-          if (processed - lastSyncUpdate >= 1000) {
-            await prisma.discogsDataSync.update({
-              where: { dumpDate },
-              data: { artistsProcessed: processed },
-            });
-            lastSyncUpdate = processed;
+          const artistName = String(artist.name).trim();
+          if (!artistName) {
+            skipped++;
+            artistBuffer = '';
+            inArtist = false;
+            continue;
           }
-
-          const artistProcessingTime = Date.now() - artistStartTime;
-          totalProcessingTime += artistProcessingTime;
           
-          if (artistProcessingTime > slowestArtistTime) {
-            slowestArtistTime = artistProcessingTime;
-            slowestArtistName = artistName;
+          // Skip artists without a profile
+          const profile = artist.profile ? String(artist.profile).trim() : null;
+          if (!profile) {
+            skipped++;
+            artistBuffer = '';
+            inArtist = false;
+            continue;
           }
 
-          if (processed % 100 === 0) {
-            const elapsed = (Date.now() - startTime) / 1000;
-            const newlyProcessed = processed - skipped;
-            const rate = processed > 0 ? processed / elapsed : 0;
-            const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
-            console.log(`   Total: ${processed.toLocaleString()} | New: ${newlyProcessed.toLocaleString()} | Skipped: ${skipped.toLocaleString()} | Created: ${created.toLocaleString()} | Updated: ${updated.toLocaleString()} | Errors: ${errors} | Rate: ${rate.toFixed(0)}/s | Avg: ${avgProcessingTime}ms/artist`);
+          const artistStartTime = Date.now();
+          processed++;
+
+          try {
+            // Prepare data
+            const artistData = {
+              name: artistName,
+              realname: artist.realname ? String(artist.realname).trim() : null,
+              profile: profile,
+              dataQuality: artist.dataQuality ? String(artist.dataQuality).trim() : null,
+              urls: artist.urls?.url ? (Array.isArray(artist.urls.url) ? artist.urls.url : [artist.urls.url]) : null,
+              nameVariations: artist.namevariations?.name ? (Array.isArray(artist.namevariations.name) ? artist.namevariations.name : [artist.namevariations.name]) : null,
+              aliases: artist.aliases?.name ? (Array.isArray(artist.aliases.name) ? artist.aliases.name.map(n => ({ name: n })) : [{ name: artist.aliases.name }]) : null,
+              members: artist.members?.name ? (Array.isArray(artist.members.name) ? artist.members.name.map(n => ({ name: n })) : [{ name: artist.members.name }]) : null,
+              groups: artist.groups?.name ? (Array.isArray(artist.groups.name) ? artist.groups.name.map(n => ({ name: n })) : [{ name: artist.groups.name }]) : null,
+              lastUpdated: new Date(),
+            };
+
+            const existingArtist = await prisma.discogsArtist.findUnique({
+              where: { name: artistData.name },
+              select: { id: true },
+            });
+            
+            await prisma.discogsArtist.upsert({
+              where: { name: artistData.name },
+              update: {
+                realname: artistData.realname,
+                profile: artistData.profile,
+                dataQuality: artistData.dataQuality,
+                urls: artistData.urls,
+                nameVariations: artistData.nameVariations,
+                aliases: artistData.aliases,
+                members: artistData.members,
+                groups: artistData.groups,
+                lastUpdated: artistData.lastUpdated,
+              },
+              create: artistData,
+            });
+            
+            if (!existingArtist) {
+              created++;
+            } else {
+              updated++;
+              skipped++;
+            }
+
+            // Update sync record periodically
+            if (processed - lastSyncUpdate >= 1000) {
+              await prisma.discogsDataSync.update({
+                where: { dumpDate },
+                data: { artistsProcessed: processed },
+              });
+              lastSyncUpdate = processed;
+            }
+
+            const artistProcessingTime = Date.now() - artistStartTime;
+            totalProcessingTime += artistProcessingTime;
+            
+            if (artistProcessingTime > slowestArtistTime) {
+              slowestArtistTime = artistProcessingTime;
+              slowestArtistName = artistName;
+            }
+
+            if (processed % 100 === 0) {
+              const elapsed = (Date.now() - startTime) / 1000;
+              const newlyProcessed = processed - skipped;
+              const rate = processed > 0 ? processed / elapsed : 0;
+              const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
+              console.log(`   Total: ${processed.toLocaleString()} | New: ${newlyProcessed.toLocaleString()} | Skipped: ${skipped.toLocaleString()} | Created: ${created.toLocaleString()} | Updated: ${updated.toLocaleString()} | Errors: ${errors} | Rate: ${rate.toFixed(0)}/s | Avg: ${avgProcessingTime}ms/artist`);
+            }
+          } catch (error) {
+            errors++;
+            if (errors <= 10) {
+              console.error(`Error processing artist "${artistName}":`, error.message);
+            }
           }
         } catch (error) {
           errors++;
           if (errors <= 10) {
-            console.error(`Error processing artist "${artistName}":`, error.message);
+            console.error(`Error parsing artist:`, error.message);
           }
         }
-      } catch (error) {
-        errors++;
-        if (errors <= 10) {
-          console.error(`Error parsing artist line:`, error.message);
+        
+        artistBuffer = '';
+        inArtist = false;
+      }
+    } else if (inArtist) {
+      // Continue buffering
+      artistBuffer += line;
+      
+      // Check if artist ends on this line
+      if (line.trim().endsWith('</artist>')) {
+        // Process this artist
+        try {
+          // Parse the XML
+          const parsed = parser.parse(artistBuffer);
+          const artist = parsed.artist;
+
+          if (!artist || !artist.name) {
+            skipped++;
+            artistBuffer = '';
+            inArtist = false;
+            continue;
+          }
+
+          const artistName = String(artist.name).trim();
+          if (!artistName) {
+            skipped++;
+            artistBuffer = '';
+            inArtist = false;
+            continue;
+          }
+          
+          // Skip artists without a profile
+          const profile = artist.profile ? String(artist.profile).trim() : null;
+          if (!profile) {
+            skipped++;
+            artistBuffer = '';
+            inArtist = false;
+            continue;
+          }
+
+          const artistStartTime = Date.now();
+          processed++;
+
+          try {
+            // Prepare data
+            const artistData = {
+              name: artistName,
+              realname: artist.realname ? String(artist.realname).trim() : null,
+              profile: profile,
+              dataQuality: artist.dataQuality ? String(artist.dataQuality).trim() : null,
+              urls: artist.urls?.url ? (Array.isArray(artist.urls.url) ? artist.urls.url : [artist.urls.url]) : null,
+              nameVariations: artist.namevariations?.name ? (Array.isArray(artist.namevariations.name) ? artist.namevariations.name : [artist.namevariations.name]) : null,
+              aliases: artist.aliases?.name ? (Array.isArray(artist.aliases.name) ? artist.aliases.name.map(n => ({ name: n })) : [{ name: artist.aliases.name }]) : null,
+              members: artist.members?.name ? (Array.isArray(artist.members.name) ? artist.members.name.map(n => ({ name: n })) : [{ name: artist.members.name }]) : null,
+              groups: artist.groups?.name ? (Array.isArray(artist.groups.name) ? artist.groups.name.map(n => ({ name: n })) : [{ name: artist.groups.name }]) : null,
+              lastUpdated: new Date(),
+            };
+
+            const existingArtist = await prisma.discogsArtist.findUnique({
+              where: { name: artistData.name },
+              select: { id: true },
+            });
+            
+            await prisma.discogsArtist.upsert({
+              where: { name: artistData.name },
+              update: {
+                realname: artistData.realname,
+                profile: artistData.profile,
+                dataQuality: artistData.dataQuality,
+                urls: artistData.urls,
+                nameVariations: artistData.nameVariations,
+                aliases: artistData.aliases,
+                members: artistData.members,
+                groups: artistData.groups,
+                lastUpdated: artistData.lastUpdated,
+              },
+              create: artistData,
+            });
+            
+            if (!existingArtist) {
+              created++;
+            } else {
+              updated++;
+              skipped++;
+            }
+
+            // Update sync record periodically
+            if (processed - lastSyncUpdate >= 1000) {
+              await prisma.discogsDataSync.update({
+                where: { dumpDate },
+                data: { artistsProcessed: processed },
+              });
+              lastSyncUpdate = processed;
+            }
+
+            const artistProcessingTime = Date.now() - artistStartTime;
+            totalProcessingTime += artistProcessingTime;
+            
+            if (artistProcessingTime > slowestArtistTime) {
+              slowestArtistTime = artistProcessingTime;
+              slowestArtistName = artistName;
+            }
+
+            if (processed % 100 === 0) {
+              const elapsed = (Date.now() - startTime) / 1000;
+              const newlyProcessed = processed - skipped;
+              const rate = processed > 0 ? processed / elapsed : 0;
+              const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
+              console.log(`   Total: ${processed.toLocaleString()} | New: ${newlyProcessed.toLocaleString()} | Skipped: ${skipped.toLocaleString()} | Created: ${created.toLocaleString()} | Updated: ${updated.toLocaleString()} | Errors: ${errors} | Rate: ${rate.toFixed(0)}/s | Avg: ${avgProcessingTime}ms/artist`);
+            }
+          } catch (error) {
+            errors++;
+            if (errors <= 10) {
+              console.error(`Error processing artist "${artistName}":`, error.message);
+            }
+          }
+        } catch (error) {
+          errors++;
+          if (errors <= 10) {
+            console.error(`Error parsing artist:`, error.message);
+          }
         }
+        
+        artistBuffer = '';
+        inArtist = false;
       }
     }
   }
