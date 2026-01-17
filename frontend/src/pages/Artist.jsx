@@ -172,8 +172,8 @@ export default function Artist() {
                     </button>
 
                     <div 
-                      className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                        expandedReleases.has(release.id) ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+                      className={`overflow-scroll transition-all duration-300 ease-in-out ${
+                        expandedReleases.has(release.id) ? 'max-h-[50vh] opacity-100' : 'max-h-0 opacity-0'
                       }`}
                     >
                       {release.songs && release.songs.length > 0 && (
@@ -272,8 +272,8 @@ export default function Artist() {
                   </button>
 
                   <div 
-                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                      expandedReleases.has(release.id) ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+                    className={`overflow-scroll transition-all duration-300 ease-in-out ${
+                      expandedReleases.has(release.id) ? 'max-h-[50vh] opacity-100' : 'max-h-0 opacity-0'
                     }`}
                   >
                     {release.songs && release.songs.length > 0 && (
