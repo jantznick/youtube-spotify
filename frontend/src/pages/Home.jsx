@@ -11,6 +11,7 @@ import SearchBar from '../components/SearchBar';
 function Home() {
   const [homePageFeed, setHomePageFeed] = useState([]);
   const [playlists, setPlaylists] = useState([]);
+  const [stats, setStats] = useState({ artistCount: 0, songCount: 0 });
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(null);
   const navigate = useNavigate();
@@ -27,12 +28,14 @@ function Home() {
 
   const loadData = async () => {
     try {
-      const [feedData, playlistsData] = await Promise.all([
+      const [feedData, playlistsData, statsData] = await Promise.all([
         feedAPI.getHomePage(),
         playlistsAPI.getAll(),
+        feedAPI.getStats(),
       ]);
       setHomePageFeed(feedData.homePageFeed || []);
       setPlaylists(playlistsData.playlists);
+      setStats(statsData);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
@@ -216,6 +219,21 @@ function Home() {
               ))}
             </div>
           )}
+
+          {/* Stats at bottom */}
+          <div className="mt-12 pt-8 border-t border-border">
+            <div className="flex flex-wrap items-center gap-6 text-sm text-text-muted">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-text-primary">{stats.artistCount.toLocaleString()}</span>
+                <span>Artists</span>
+              </div>
+              <div className="w-px h-4 bg-border"></div>
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-text-primary">{stats.songCount.toLocaleString()}</span>
+                <span>Songs Available</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

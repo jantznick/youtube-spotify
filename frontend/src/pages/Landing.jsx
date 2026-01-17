@@ -1,8 +1,23 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthModal } from '../contexts/AuthModalContext';
+import { feedAPI } from '../api/api';
 
 function Landing() {
   const { openAuthModal } = useAuthModal();
+  const [stats, setStats] = useState({ artistCount: 0, songCount: 0 });
+
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const statsData = await feedAPI.getStats();
+        setStats(statsData);
+      } catch (error) {
+        console.error('Failed to load stats:', error);
+      }
+    };
+    loadStats();
+  }, []);
   return (
     <div className="min-h-screen bg-gradient-to-b from-bg-dark via-bg-dark to-bg-card">
       {/* Navigation */}
@@ -42,6 +57,19 @@ function Landing() {
           <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-text-secondary mb-8 sm:mb-10 md:mb-12 max-w-3xl mx-auto leading-relaxed px-2">
             Build playlists from YouTube, import from Spotify, and create your perfect music collection. All powered by YouTube's vast library.
           </p>
+          
+          {/* Stats Section */}
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mb-8 sm:mb-10 md:mb-12">
+            <span className="text-3xl sm:text-4xl md:text-5xl font-bold text-text-primary bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              {stats.songCount.toLocaleString()}
+            </span>
+            <span className="text-base sm:text-lg md:text-xl text-text-secondary">songs from</span>
+            <span className="text-3xl sm:text-4xl md:text-5xl font-bold text-text-primary bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              {stats.artistCount.toLocaleString()}
+            </span>
+            <span className="text-base sm:text-lg md:text-xl text-text-secondary">artists</span>
+          </div>
+
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
             <Link
               to="/explore"

@@ -150,6 +150,7 @@ export const userAPI = {
 
 export const feedAPI = {
   getHomePage: () => request('/feed/homepage'),
+  getStats: () => request('/feed/stats'),
 };
 
 export const adminAPI = {

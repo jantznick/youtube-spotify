@@ -1,8 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
-import sax from 'sax';
+import readline from 'readline';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { XMLParser } from 'fast-xml-parser';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,16 +36,6 @@ const getDumpDate = () => {
   return `${match[1]}-${match[2]}`;
 };
 
-// Parse duration string "4:45" to seconds
-const parseDuration = (durationStr) => {
-  if (!durationStr) return null;
-  const parts = durationStr.split(':');
-  if (parts.length === 2) {
-    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-  }
-  return null;
-};
-
 // Main processing function
 async function processDiscogsArtists() {
   const dumpDate = getDumpDate();
@@ -66,12 +57,11 @@ async function processDiscogsArtists() {
     where: { dumpDate },
   });
 
-  const isNewDump = !syncRecord;
-  
   if (!syncRecord) {
     // New dump - start fresh
     syncRecord = await prisma.discogsDataSync.create({
       data: {
+        id: dumpDate,
         dumpDate,
         status: 'processing',
         startedAt: new Date(),
@@ -99,256 +89,111 @@ async function processDiscogsArtists() {
   console.log(`📁 File: ${xmlFileName} (${fileSizeMB}MB)\n`);
 
   // Stats
-  let processed = 0; // Count of artists seen in XML
+  let processed = 0;
   let created = 0;
   let updated = 0;
   let errors = 0;
-  let skipped = 0; // Count of artists skipped because they already exist
+  let skipped = 0;
   const startTime = Date.now();
   
   // Timing metrics
-  let totalProcessingTime = 0; // Total time spent processing artists (DB operations)
+  let totalProcessingTime = 0;
   let slowestArtistTime = 0;
   let slowestArtistName = null;
-
-  // Current artist being parsed
-  let currentArtist = null;
-  let currentElement = null;
-  let currentText = '';
-  const elementStack = [];
-
-  // Simple lock to ensure only one artist is processed at a time
-  // Wait for DB operation to complete before processing next artist
-  let isProcessing = false;
   let lastSyncUpdate = 0;
 
-  // Create a promise that resolves when parsing is complete
-  let resolveParser;
-  let rejectParser;
-  const parserPromise = new Promise((resolve, reject) => {
-    resolveParser = resolve;
-    rejectParser = reject;
+  // Create XML parser
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '',
+    textNodeName: '#text',
+    parseAttributeValue: false,
   });
 
-  // Create SAX parser
-  const parser = sax.createStream(true, { lowercase: true });
-  parser.onerror = (err) => {
-    console.error('❌ XML Parse Error:', err);
-    errors++;
-    rejectParser(err);
-  };
+  // Create readline interface
+  const fileStream = fs.createReadStream(xmlPath);
+  const rl = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity,
+  });
 
-  // Handle opening tags
-  parser.onopentag = (node) => {
-    elementStack.push(node.name);
-    currentElement = node.name;
+  console.log(`🚀 Starting line-by-line processing...\n`);
+  console.log(`   Reading from: ${xmlPath}\n`);
 
-    // Debug: log first few artist tags
-    if (node.name === 'artist' && processed < 3) {
+  // Process line by line
+  for await (const line of rl) {
+    // Skip empty lines and XML header/footer
+    if (!line.trim() || line.trim().startsWith('<?xml') || line.trim() === '<artists>' || line.trim() === '</artists>') {
+      continue;
     }
 
-    if (node.name === 'artist') {
-      currentArtist = {
-        id: null,
-        name: null,
-        realname: null,
-        profile: null,
-        dataQuality: null,
-        urls: [],
-        nameVariations: [],
-        aliases: [],
-        members: [],
-        groups: [],
-      };
-      currentText = '';
-    } else if (node.name === 'name' && elementStack.length > 1 && elementStack[elementStack.length - 2] === 'namevariations') {
-      // Name variation - start collecting text
-      currentText = '';
-    } else if (node.name === 'name' && node.attributes?.id && elementStack.length > 1 && elementStack[elementStack.length - 2] === 'aliases') {
-      // Alias with ID
-      if (currentArtist) {
-        currentArtist.aliases.push({
-          id: node.attributes.id,
-          name: '',
-        });
-      }
-      currentText = '';
-    } else if (node.name === 'name' && node.attributes?.id && elementStack.length > 1 && elementStack[elementStack.length - 2] === 'members') {
-      // Member with ID
-      if (currentArtist) {
-        currentArtist.members.push({
-          id: node.attributes.id,
-          name: '',
-        });
-      }
-      currentText = '';
-    } else if (node.name === 'name' && node.attributes?.id && elementStack.length > 1 && elementStack[elementStack.length - 2] === 'groups') {
-      // Group with ID
-      if (currentArtist) {
-        currentArtist.groups.push({
-          id: node.attributes.id,
-          name: '',
-        });
-      }
-      currentText = '';
-    } else if (node.name === 'url' && elementStack.length > 1 && elementStack[elementStack.length - 2] === 'urls') {
-      // URL - start collecting text
-      currentText = '';
-    } else {
-      currentText = '';
-    }
-  };
-
-  // Handle text content
-  parser.ontext = (text) => {
-    if (!currentArtist) return;
-
-    const parent = elementStack.length > 1 ? elementStack[elementStack.length - 2] : null;
-
-    if (currentElement === 'id' && parent === 'artist') {
-      currentArtist.id = (currentArtist.id || '') + text.trim();
-    } else if (currentElement === 'name' && parent === 'artist') {
-      currentArtist.name = (currentArtist.name || '') + text.trim();
-    } else if (currentElement === 'realname' && parent === 'artist') {
-      currentArtist.realname = (currentArtist.realname || '') + text.trim();
-    } else if (currentElement === 'profile' && parent === 'artist') {
-      currentArtist.profile = (currentArtist.profile || '') + text;
-    } else if (currentElement === 'data_quality' && parent === 'artist') {
-      currentArtist.dataQuality = (currentArtist.dataQuality || '') + text.trim();
-    } else if (currentElement === 'name' && parent === 'namevariations') {
-      currentText += text;
-    } else if (currentElement === 'name' && parent === 'aliases' && currentArtist.aliases.length > 0) {
-      // Update the last alias name
-      const lastAlias = currentArtist.aliases[currentArtist.aliases.length - 1];
-      lastAlias.name = (lastAlias.name || '') + text;
-    } else if (currentElement === 'name' && parent === 'members' && currentArtist.members.length > 0) {
-      // Update the last member name
-      const lastMember = currentArtist.members[currentArtist.members.length - 1];
-      lastMember.name = (lastMember.name || '') + text;
-    } else if (currentElement === 'name' && parent === 'groups' && currentArtist.groups.length > 0) {
-      // Update the last group name
-      const lastGroup = currentArtist.groups[currentArtist.groups.length - 1];
-      lastGroup.name = (lastGroup.name || '') + text;
-    } else if (currentElement === 'url' && parent === 'urls') {
-      currentText += text;
-    }
-  };
-
-  // Handle closing tags
-  parser.onclosetag = async (tagName) => {
-    // Check parent before popping
-    const parent = elementStack.length > 1 ? elementStack[elementStack.length - 2] : null;
-
-    if (tagName === 'artist' && currentArtist) {
-      // CRITICAL: Store ALL data from currentArtist BEFORE any async operations
-      // because currentArtist might be set to null by other handlers
-      const artistName = currentArtist.name?.trim();
-      const discogsId = currentArtist.id?.trim() || null;
-      const realname = currentArtist.realname?.trim() || null;
-      const profile = currentArtist.profile?.trim() || null;
-      const dataQuality = currentArtist.dataQuality?.trim() || null;
-      const urls = currentArtist.urls?.length > 0 ? currentArtist.urls : null;
-      const nameVariations = currentArtist.nameVariations?.length > 0 ? currentArtist.nameVariations : null;
-      const aliases = currentArtist.aliases?.length > 0 ? currentArtist.aliases : null;
-      const members = currentArtist.members?.length > 0 ? currentArtist.members : null;
-      const groups = currentArtist.groups?.length > 0 ? currentArtist.groups : null;
-      
-      // Clear currentArtist immediately to prevent race conditions
-      currentArtist = null;
-      
-      // Validate required fields - we need name
-      if (!artistName) {
-        errors++;
-        const artistId = discogsId || 'unknown';
-        console.error(`Error processing artist ${artistId}: Missing required field (name)`);
-        return;
-      }
-      
-      // Skip artists without a profile (before acquiring lock)
-      if (!profile || !profile.trim()) {
-        skipped++;
-        return;
-      }
-      
-      // Wait if another artist is currently being processed
-      // CRITICAL: Wait BEFORE incrementing processed to ensure sequential processing
-      while (isProcessing) {
-        await new Promise(resolve => setTimeout(resolve, 10));
-      }
-      
-      // Process this artist immediately, waiting for DB to complete
-      isProcessing = true;
-      
-      // Only increment processed AFTER acquiring the lock and passing validation
-      processed++;
-      const shouldLog = processed % 100 === 0;
-      
-      const artistStartTime = Date.now();
+    // Each line should be a complete <artist>...</artist> element
+    if (line.trim().startsWith('<artist') && line.trim().endsWith('</artist>')) {
       try {
-          // Prepare data - use name as unique identifier, store discogsId separately
+        // Parse the XML line
+        const parsed = parser.parse(line);
+        const artist = parsed.artist;
+
+        if (!artist || !artist.name) {
+          skipped++;
+          continue;
+        }
+
+        const artistName = artist.name.trim();
+        
+        // Skip artists without a profile
+        if (!artist.profile || !artist.profile.trim()) {
+          skipped++;
+          continue;
+        }
+
+        const artistStartTime = Date.now();
+        processed++;
+
+        try {
+          // Prepare data
           const artistData = {
-            discogsId: discogsId,
             name: artistName,
-            realname: realname,
-            profile: profile,
-            dataQuality: dataQuality,
-            urls: urls,
-            nameVariations: nameVariations,
-            aliases: aliases,
-            members: members,
-            groups: groups,
+            realname: artist.realname?.trim() || null,
+            profile: artist.profile?.trim() || null,
+            dataQuality: artist.dataQuality?.trim() || null,
+            urls: artist.urls?.url ? (Array.isArray(artist.urls.url) ? artist.urls.url : [artist.urls.url]) : null,
+            nameVariations: artist.namevariations?.name ? (Array.isArray(artist.namevariations.name) ? artist.namevariations.name : [artist.namevariations.name]) : null,
+            aliases: artist.aliases?.name ? (Array.isArray(artist.aliases.name) ? artist.aliases.name.map(n => ({ name: n })) : [{ name: artist.aliases.name }]) : null,
+            members: artist.members?.name ? (Array.isArray(artist.members.name) ? artist.members.name.map(n => ({ name: n })) : [{ name: artist.members.name }]) : null,
+            groups: artist.groups?.name ? (Array.isArray(artist.groups.name) ? artist.groups.name.map(n => ({ name: n })) : [{ name: artist.groups.name }]) : null,
             lastUpdated: new Date(),
-            // updatedAt will be set automatically by Prisma due to @updatedAt
           };
 
-          // Upsert artist (will create if new, update if exists)
-          try {
-            // Check if artist exists first to accurately track created vs updated
-            const existingArtist = await prisma.discogsArtist.findUnique({
-              where: { name: artistData.name },
-              select: { id: true },
-            });
-            
-            const result = await prisma.discogsArtist.upsert({
-              where: { name: artistData.name },
-              update: {
-                discogsId: artistData.discogsId,
-                realname: artistData.realname,
-                profile: artistData.profile,
-                dataQuality: artistData.dataQuality,
-                urls: artistData.urls,
-                nameVariations: artistData.nameVariations,
-                aliases: artistData.aliases,
-                members: artistData.members,
-                groups: artistData.groups,
-                lastUpdated: artistData.lastUpdated,
-              },
-              create: artistData,
-            });
-            
-            // Use the existence check instead of unreliable timestamp comparison
-            if (!existingArtist) {
-              created++;
-              // Debug: log first few creates to verify logic is working
-              if (created <= 10) {
-                console.log(`   🐛 DEBUG: Creating artist "${artistData.name}" (created count: ${created}, processed: ${processed})`);
-              }
-            } else {
-              updated++;
-              skipped++; // Artist already existed (was updated, not created)
-            }
-          } catch (error) {
-            // Always log errors - remove the limit to see what's actually failing
-            if (errors < 50 || errors % 1000 === 0) {
-              console.error(`Error upserting artist "${artistData.name}" (processed: ${processed}):`, error.message);
-              if (errors < 10) {
-                console.error(`   Full error:`, error);
-              }
-            }
-            errors++;
+          const existingArtist = await prisma.discogsArtist.findUnique({
+            where: { name: artistData.name },
+            select: { id: true },
+          });
+          
+          await prisma.discogsArtist.upsert({
+            where: { name: artistData.name },
+            update: {
+              realname: artistData.realname,
+              profile: artistData.profile,
+              dataQuality: artistData.dataQuality,
+              urls: artistData.urls,
+              nameVariations: artistData.nameVariations,
+              aliases: artistData.aliases,
+              members: artistData.members,
+              groups: artistData.groups,
+              lastUpdated: artistData.lastUpdated,
+            },
+            create: artistData,
+          });
+          
+          if (!existingArtist) {
+            created++;
+          } else {
+            updated++;
+            skipped++;
           }
 
-          // Update sync record periodically (every 1000 artists) to reduce DB load
+          // Update sync record periodically
           if (processed - lastSyncUpdate >= 1000) {
             await prisma.discogsDataSync.update({
               where: { dumpDate },
@@ -357,161 +202,72 @@ async function processDiscogsArtists() {
             lastSyncUpdate = processed;
           }
 
-          // Track timing for this artist
-          const artistProcessingTime = (Date.now() - artistStartTime);
+          const artistProcessingTime = Date.now() - artistStartTime;
           totalProcessingTime += artistProcessingTime;
           
-          // Track slowest artist
           if (artistProcessingTime > slowestArtistTime) {
             slowestArtistTime = artistProcessingTime;
             slowestArtistName = artistName;
           }
-          
-          // Log progress every 100 artists (if we determined we should log earlier)
-          if (shouldLog) {
+
+          if (processed % 100 === 0) {
             const elapsed = (Date.now() - startTime) / 1000;
             const newlyProcessed = processed - skipped;
             const rate = processed > 0 ? processed / elapsed : 0;
             const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
             console.log(`   Total: ${processed.toLocaleString()} | New: ${newlyProcessed.toLocaleString()} | Skipped: ${skipped.toLocaleString()} | Created: ${created.toLocaleString()} | Updated: ${updated.toLocaleString()} | Errors: ${errors} | Rate: ${rate.toFixed(0)}/s | Avg: ${avgProcessingTime}ms/artist`);
           }
-      } catch (error) {
-        // Use stored artistName if available, otherwise try discogsId
-        const errorArtistName = artistName || discogsId || 'unknown';
-        console.error(`Error processing artist "${errorArtistName}":`, error.message);
-        if (errors < 10) {
-          console.error(`   Full error:`, error);
+        } catch (error) {
+          errors++;
+          if (errors <= 10) {
+            console.error(`Error processing artist "${artistName}":`, error.message);
+          }
         }
+      } catch (error) {
         errors++;
-      } finally {
-        const artistProcessingTime = (Date.now() - artistStartTime);
-        totalProcessingTime += artistProcessingTime;
-        isProcessing = false;
+        if (errors <= 10) {
+          console.error(`Error parsing artist line:`, error.message);
+        }
       }
-      
-      // Return early - elementStack will be popped at the end of onclosetag
-      return;
-    } else if (tagName === 'name' && parent === 'namevariations') {
-      // Save name variation (before popping)
-      if (currentText.trim() && currentArtist) {
-        currentArtist.nameVariations.push(currentText.trim());
-      }
-      currentText = '';
-    } else if (tagName === 'name' && parent === 'members') {
-      // Save member name (before popping)
-      if (currentText.trim() && currentArtist && currentArtist.members.length > 0) {
-        const lastMember = currentArtist.members[currentArtist.members.length - 1];
-        lastMember.name = currentText.trim();
-      }
-      currentText = '';
-    } else if (tagName === 'name' && parent === 'groups') {
-      // Save group name (before popping)
-      if (currentText.trim() && currentArtist && currentArtist.groups.length > 0) {
-        const lastGroup = currentArtist.groups[currentArtist.groups.length - 1];
-        lastGroup.name = currentText.trim();
-      }
-      currentText = '';
-    } else if (tagName === 'url' && parent === 'urls') {
-      // Save URL (before popping)
-      if (currentText.trim() && currentArtist) {
-        currentArtist.urls.push(currentText.trim());
-      }
-      currentText = '';
     }
+  }
 
-    elementStack.pop();
-    currentElement = elementStack.length > 0 ? elementStack[elementStack.length - 1] : null;
-  };
-
-  // Process remaining batch
-  parser.onend = async () => {
-    try {
-      console.log(`\n📊 Parser ended.`);
-      console.log(`   Waiting for final artist to finish processing...`);
-      
-      // Wait for any in-flight artist to finish processing
-      while (isProcessing) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      console.log(`   Processed so far: ${processed}`);
-
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-      const newlyProcessed = processed - skipped;
-      const rate = processed > 0 ? (processed / parseFloat(elapsed)).toFixed(0) : '0';
-
-      const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
-      const totalProcessingTimeSeconds = (totalProcessingTime / 1000).toFixed(1);
-      const elapsedSeconds = parseFloat(elapsed);
-      const dbTimePercentage = elapsedSeconds > 0 ? ((totalProcessingTime / 1000) / elapsedSeconds * 100).toFixed(1) : '0';
-      
-      console.log(`\n✅ Processing complete!`);
-      console.log(`   Total Artists in XML: ${processed.toLocaleString()}`);
-      console.log(`   Skipped (already in DB): ${skipped.toLocaleString()}`);
-      console.log(`   Newly Processed: ${newlyProcessed.toLocaleString()}`);
-      console.log(`   Created: ${created.toLocaleString()}`);
-      console.log(`   Updated: ${updated.toLocaleString()}`);
-      console.log(`   Errors: ${errors}`);
-      console.log(`   Total Time: ${elapsed}s`);
-      console.log(`   DB Processing Time: ${totalProcessingTimeSeconds}s (${dbTimePercentage}% of total)`);
-      console.log(`   Avg Processing Time: ${avgProcessingTime}ms per artist`);
-      if (slowestArtistName && slowestArtistTime > 100) {
-        console.log(`   Slowest Artist: "${slowestArtistName}" (${slowestArtistTime}ms)`);
-      }
-      const finalRate = newlyProcessed > 0 ? (newlyProcessed / elapsedSeconds).toFixed(0) : '0';
-      console.log(`   Rate: ${finalRate} artists/s\n`);
-
-      // Final sync record update
-      await prisma.discogsDataSync.update({
-        where: { dumpDate },
-        data: {
-          artistsProcessed: processed,
-          status: 'completed',
-          completedAt: new Date(),
-        },
-      });
-
-      await prisma.$disconnect();
-      resolveParser();
-    } catch (error) {
-      await prisma.$disconnect();
-      rejectParser(error);
-    }
-  };
-
-
-  // Start processing
-  console.log(`🚀 Starting XML stream processing...\n`);
-  console.log(`   Reading from: ${xmlPath}\n`);
+  // Final summary
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+  const newlyProcessed = processed - skipped;
+  const rate = processed > 0 ? (processed / parseFloat(elapsed)).toFixed(0) : '0';
+  const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
+  const totalProcessingTimeSeconds = (totalProcessingTime / 1000).toFixed(1);
+  const elapsedSeconds = parseFloat(elapsed);
+  const dbTimePercentage = elapsedSeconds > 0 ? ((totalProcessingTime / 1000) / elapsedSeconds * 100).toFixed(1) : '0';
   
-  const readStream = fs.createReadStream(xmlPath);
-  
-  readStream.on('error', (err) => {
-    console.error('❌ Stream error:', err);
-    rejectParser(err);
+  console.log(`\n✅ Processing complete!`);
+  console.log(`   Total Artists in XML: ${processed.toLocaleString()}`);
+  console.log(`   Skipped: ${skipped.toLocaleString()}`);
+  console.log(`   Newly Processed: ${newlyProcessed.toLocaleString()}`);
+  console.log(`   Created: ${created.toLocaleString()}`);
+  console.log(`   Updated: ${updated.toLocaleString()}`);
+  console.log(`   Errors: ${errors}`);
+  console.log(`   Total Time: ${elapsed}s`);
+  console.log(`   DB Processing Time: ${totalProcessingTimeSeconds}s (${dbTimePercentage}% of total)`);
+  console.log(`   Avg Processing Time: ${avgProcessingTime}ms per artist`);
+  if (slowestArtistName && slowestArtistTime > 100) {
+    console.log(`   Slowest Artist: "${slowestArtistName}" (${slowestArtistTime}ms)`);
+  }
+  const finalRate = newlyProcessed > 0 ? (newlyProcessed / elapsedSeconds).toFixed(0) : '0';
+  console.log(`   Rate: ${finalRate} artists/s\n`);
+
+  // Final sync record update
+  await prisma.discogsDataSync.update({
+    where: { dumpDate },
+    data: {
+      artistsProcessed: processed,
+      status: 'completed',
+      completedAt: new Date(),
+    },
   });
-  
-  let chunkCount = 0;
-  readStream.on('data', (chunk) => {
-    chunkCount++;
-    // Log first few chunks to verify stream is working
-    if (chunkCount <= 3) {
-      console.log(`   Stream chunk #${chunkCount}: ${chunk.length} bytes`);
-    }
-  });
-  
-  readStream.on('end', () => {
-    console.log(`   Stream ended after ${chunkCount} chunks`);
-  });
-  
-  parser.on('ready', () => {
-    console.log('   Parser ready, starting to parse...\n');
-  });
-  
-  readStream.pipe(parser);
-  
-  // Wait for parser to complete
-  return parserPromise;
+
+  await prisma.$disconnect();
 }
 
 // Run if called directly
@@ -527,4 +283,4 @@ if (process.argv[1]?.includes('process-discogs-artists.js')) {
     });
 }
 
-export { processDiscogsArtists };
+export default processDiscogsArtists;

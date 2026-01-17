@@ -75,4 +75,28 @@ router.get('/homepage', async (req, res) => {
   }
 });
 
+// Get stats (public endpoint)
+router.get('/stats', async (req, res) => {
+  try {
+    const [artistCount, songCount] = await Promise.all([
+      prisma.discogsArtist.count(),
+      prisma.song.count({
+        where: {
+          youtubeId: {
+            not: null,
+          },
+        },
+      }),
+    ]);
+
+    res.json({
+      artistCount,
+      songCount,
+    });
+  } catch (error) {
+    console.error('Get stats error:', error);
+    res.status(500).json({ error: 'Failed to get stats' });
+  }
+});
+
 export default router;

@@ -1,8 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
-import sax from 'sax';
+import readline from 'readline';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { XMLParser } from 'fast-xml-parser';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,7 +62,7 @@ async function processDiscogsReleases() {
   console.log(`\n🎵 Processing Discogs Releases`);
   console.log(`📅 Dump Date: ${dumpDate}`);
   if (isDebugMode) {
-    console.log(`🐛 DEBUG MODE: Only processing first 3 chunks\n`);
+    console.log(`🐛 DEBUG MODE: Only processing first 3 releases\n`);
   }
 
   // Find XML file
@@ -82,6 +83,7 @@ async function processDiscogsReleases() {
   if (!syncRecord) {
     syncRecord = await prisma.discogsDataSync.create({
       data: {
+        id: dumpDate,
         dumpDate,
         status: 'processing',
         startedAt: new Date(),
@@ -108,7 +110,6 @@ async function processDiscogsReleases() {
   console.log(`📁 File: ${xmlFileName} (${fileSizeMB}MB)\n`);
 
   // Stats
-  // In debug mode, always start from 0 (ignore resume count)
   let processed = (isDebugMode ? 0 : (syncRecord.releasesProcessed || 0));
   let created = 0;
   let updated = 0;
@@ -119,835 +120,526 @@ async function processDiscogsReleases() {
   const startTime = Date.now();
   
   // Timing metrics
-  let totalProcessingTime = 0; // Total time spent processing releases (DB operations)
+  let totalProcessingTime = 0;
   let slowestReleaseTime = 0;
   let slowestReleaseTitle = null;
-
-  // Current release being parsed
-  let currentRelease = null;
-  let currentTrack = null;
-  let currentElement = null;
-  let currentText = '';
-  const elementStack = [];
-
-  // Simple lock to ensure only one release is processed at a time
-  // Wait for DB operation to complete before processing next release
-  let isProcessing = false;
   let lastSyncUpdate = processed;
-  let chunkCount = 0;
-  const debugRecords = [];
-  let readStream = null;
 
-  // Create a promise that resolves when parsing is complete
-  let resolveParser;
-  let rejectParser;
-  let debugModeCompleted = false; // Track if debug mode already showed summary
-  const parserPromise = new Promise((resolve, reject) => {
-    resolveParser = resolve;
-    rejectParser = reject;
+  // Create XML parser
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '',
+    textNodeName: '#text',
+    parseAttributeValue: false,
+    parseTrueNumberOnly: false,
   });
 
-  // Create SAX parser
-  const parser = sax.createStream(true, { lowercase: true });
-  parser.onerror = (err) => {
-    console.error('❌ XML Parse Error:', err);
-    errors++;
-    rejectParser(err);
-  };
+  // Create readline interface
+  const fileStream = fs.createReadStream(xmlPath);
+  const rl = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity,
+  });
 
-  // Handle opening tags
-  parser.onopentag = (node) => {
-    elementStack.push(node.name);
-    currentElement = node.name;
+  console.log(`🚀 Starting line-by-line processing...\n`);
+  console.log(`   Reading from: ${xmlPath}\n`);
 
-    if (node.name === 'release') {
-      currentRelease = {
-        id: node.attributes?.id || null,
-        status: node.attributes?.status || null,
-        title: null,
-        genres: [],
-        styles: [],
-        released: null,
-        dataQuality: null,
-        artists: [],
-        labels: [],
-        tracks: [],
-        videos: [],
-        masterId: null,
-        country: null,
-      };
-      currentText = '';
-    } else if (node.name === 'track') {
-      currentTrack = {
-        position: null,
-        title: null,
-        duration: null,
-        artists: [],
-        extraArtists: [],
-      };
-      currentText = '';
-    } else if (node.name === 'artist' && elementStack.includes('artists')) {
-      // Main release artist
-      const artist = { id: null, name: null };
-      if (node.attributes?.id) {
-        artist.id = node.attributes.id;
-      }
-      if (currentRelease) {
-        currentRelease.artists.push(artist);
-      }
-      currentText = '';
-    } else if (node.name === 'artist' && elementStack.includes('track')) {
-      // Track artist
-      const artist = { id: null, name: null };
-      if (node.attributes?.id) {
-        artist.id = node.attributes.id;
-      }
-      if (currentTrack) {
-        currentTrack.artists.push(artist);
-      }
-      currentText = '';
-    } else if (node.name === 'artist' && elementStack.includes('extraartists')) {
-      // Extra artist (remixer, producer, etc.)
-      const artist = {
-        id: node.attributes?.id || null,
-        name: null,
-        role: node.attributes?.role || null,
-        tracks: node.attributes?.tracks || null,
-      };
-      if (elementStack.includes('track')) {
-        if (currentTrack) {
-          currentTrack.extraArtists.push(artist);
-        }
-      } else if (currentRelease) {
-        // Release-level extra artist
-        if (!currentRelease.extraArtists) {
-          currentRelease.extraArtists = [];
-        }
-        currentRelease.extraArtists.push(artist);
-      }
-      currentText = '';
-    } else if (node.name === 'video') {
-      const video = {
-        src: node.attributes?.src || null,
-        duration: node.attributes?.duration ? parseInt(node.attributes.duration) : null,
-        title: null,
-      };
-      if (currentRelease) {
-        currentRelease.videos.push(video);
-      }
-      currentText = '';
-    } else {
-      currentText = '';
+  let releaseBuffer = '';
+  let inRelease = false;
+
+  // Process line by line
+  for await (const line of rl) {
+    // Skip empty lines and XML header/footer
+    if (!line.trim() || line.trim().startsWith('<?xml') || line.trim() === '<releases>' || line.trim() === '</releases>') {
+      continue;
     }
-  };
 
-  // Handle text content
-  parser.ontext = (text) => {
-    const parent = elementStack.length > 1 ? elementStack[elementStack.length - 2] : null;
-
-    if (!currentRelease) return;
-
-    if (currentElement === 'title' && parent === 'release') {
-      currentRelease.title = (currentRelease.title || '') + text.trim();
-    } else if (currentElement === 'genre') {
-      currentRelease.genres.push(text.trim());
-    } else if (currentElement === 'style') {
-      currentRelease.styles.push(text.trim());
-    } else if (currentElement === 'released') {
-      currentRelease.released = (currentRelease.released || '') + text.trim();
-    } else if (currentElement === 'data_quality') {
-      currentRelease.dataQuality = (currentRelease.dataQuality || '') + text.trim();
-    } else if (currentElement === 'master_id') {
-      currentRelease.masterId = (currentRelease.masterId || '') + text.trim();
-    } else if (currentElement === 'country') {
-      currentRelease.country = (currentRelease.country || '') + text.trim();
-    } else if (currentElement === 'name' && parent === 'artist' && elementStack.includes('artists')) {
-      // Main release artist name
-      if (currentRelease.artists.length > 0) {
-        const lastArtist = currentRelease.artists[currentRelease.artists.length - 1];
-        lastArtist.name = (lastArtist.name || '') + text.trim();
+    // Check if line starts a release
+    if (line.trim().startsWith('<release')) {
+      inRelease = true;
+      releaseBuffer = line;
+      
+      // Check if it's complete on one line
+      if (line.trim().endsWith('</release>')) {
+        // Process this release
+        const stats = {
+          processed, created, updated, errors, skipped, tracksProcessed, songsUpserted,
+          totalProcessingTime, slowestReleaseTime, slowestReleaseTitle, lastSyncUpdate,
+          dumpDate, isDebugMode, startTime
+        };
+        await processRelease(releaseBuffer, parser, stats);
+        
+        // Update local variables from stats
+        created = stats.created;
+        updated = stats.updated;
+        errors = stats.errors;
+        skipped = stats.skipped;
+        tracksProcessed = stats.tracksProcessed;
+        songsUpserted = stats.songsUpserted;
+        totalProcessingTime = stats.totalProcessingTime;
+        slowestReleaseTime = stats.slowestReleaseTime;
+        slowestReleaseTitle = stats.slowestReleaseTitle;
+        lastSyncUpdate = stats.lastSyncUpdate;
+        
+        releaseBuffer = '';
+        inRelease = false;
+        processed++;
+        
+        if (isDebugMode && processed >= 3) {
+          break;
+        }
       }
-    } else if (currentElement === 'id' && parent === 'artist' && elementStack.includes('artists')) {
-      // Main release artist ID
-      if (currentRelease.artists.length > 0) {
-        const lastArtist = currentRelease.artists[currentRelease.artists.length - 1];
-        lastArtist.id = (lastArtist.id || '') + text.trim();
-      }
-    } else if (currentElement === 'name' && parent === 'artist' && elementStack.includes('track')) {
-      // Track artist name
-      if (currentTrack && currentTrack.artists.length > 0) {
-        const lastArtist = currentTrack.artists[currentTrack.artists.length - 1];
-        lastArtist.name = (lastArtist.name || '') + text.trim();
-      }
-    } else if (currentElement === 'id' && parent === 'artist' && elementStack.includes('track')) {
-      // Track artist ID
-      if (currentTrack && currentTrack.artists.length > 0) {
-        const lastArtist = currentTrack.artists[currentTrack.artists.length - 1];
-        lastArtist.id = (lastArtist.id || '') + text.trim();
-      }
-    } else if (currentElement === 'name' && parent === 'artist' && elementStack.includes('extraartists')) {
-      // Extra artist name
-      if (elementStack.includes('track') && currentTrack && currentTrack.extraArtists.length > 0) {
-        const lastArtist = currentTrack.extraArtists[currentTrack.extraArtists.length - 1];
-        lastArtist.name = (lastArtist.name || '') + text.trim();
-      } else if (currentRelease.extraArtists && currentRelease.extraArtists.length > 0) {
-        const lastArtist = currentRelease.extraArtists[currentRelease.extraArtists.length - 1];
-        lastArtist.name = (lastArtist.name || '') + text.trim();
-      }
-    } else if (currentElement === 'position' && parent === 'track') {
-      if (currentTrack) {
-        currentTrack.position = (currentTrack.position || '') + text.trim();
-      }
-    } else if (currentElement === 'title' && parent === 'track') {
-      if (currentTrack) {
-        currentTrack.title = (currentTrack.title || '') + text.trim();
-      }
-    } else if (currentElement === 'duration' && parent === 'track') {
-      if (currentTrack) {
-        currentTrack.duration = (currentTrack.duration || '') + text.trim();
-      }
-    } else if (currentElement === 'title' && parent === 'video') {
-      if (currentRelease.videos.length > 0) {
-        const lastVideo = currentRelease.videos[currentRelease.videos.length - 1];
-        lastVideo.title = (lastVideo.title || '') + text.trim();
+    } else if (inRelease) {
+      // Continue buffering
+      releaseBuffer += line;
+      
+      // Check if release ends on this line
+      if (line.trim().endsWith('</release>')) {
+        // Process this release
+        const stats = {
+          processed, created, updated, errors, skipped, tracksProcessed, songsUpserted,
+          totalProcessingTime, slowestReleaseTime, slowestReleaseTitle, lastSyncUpdate,
+          dumpDate, isDebugMode, startTime
+        };
+        await processRelease(releaseBuffer, parser, stats);
+        
+        // Update local variables from stats
+        created = stats.created;
+        updated = stats.updated;
+        errors = stats.errors;
+        skipped = stats.skipped;
+        tracksProcessed = stats.tracksProcessed;
+        songsUpserted = stats.songsUpserted;
+        totalProcessingTime = stats.totalProcessingTime;
+        slowestReleaseTime = stats.slowestReleaseTime;
+        slowestReleaseTitle = stats.slowestReleaseTitle;
+        lastSyncUpdate = stats.lastSyncUpdate;
+        
+        releaseBuffer = '';
+        inRelease = false;
+        processed++;
+        
+        if (isDebugMode && processed >= 3) {
+          break;
+        }
       }
     }
-  };
+  }
 
-  // Handle closing tags
-  parser.onclosetag = async (tagName) => {
-    const parent = elementStack.length > 1 ? elementStack[elementStack.length - 2] : null;
+  // Final summary
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+  const newlyProcessed = processed - skipped;
+  const rate = processed > 0 ? (processed / parseFloat(elapsed)).toFixed(0) : '0';
+  const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
+  const totalProcessingTimeSeconds = (totalProcessingTime / 1000).toFixed(1);
+  const elapsedSeconds = parseFloat(elapsed);
+  const dbTimePercentage = elapsedSeconds > 0 ? ((totalProcessingTime / 1000) / elapsedSeconds * 100).toFixed(1) : '0';
+  
+  console.log(`\n✅ Processing complete!`);
+  console.log(`   Total Releases in XML: ${processed.toLocaleString()}`);
+  console.log(`   Skipped: ${skipped.toLocaleString()}`);
+  console.log(`   Newly Processed: ${newlyProcessed.toLocaleString()}`);
+  console.log(`   Created: ${created.toLocaleString()}`);
+  console.log(`   Updated: ${updated.toLocaleString()}`);
+  console.log(`   Tracks Processed: ${tracksProcessed.toLocaleString()}`);
+  console.log(`   Songs Upserted: ${songsUpserted.toLocaleString()}`);
+  console.log(`   Errors: ${errors}`);
+  console.log(`   Total Time: ${elapsed}s`);
+  console.log(`   DB Processing Time: ${totalProcessingTimeSeconds}s (${dbTimePercentage}% of total)`);
+  console.log(`   Avg Processing Time: ${avgProcessingTime}ms per release`);
+  if (slowestReleaseTitle && slowestReleaseTime > 100) {
+    console.log(`   Slowest Release: "${slowestReleaseTitle}" (${slowestReleaseTime}ms)`);
+  }
+  const finalRate = newlyProcessed > 0 ? (newlyProcessed / elapsedSeconds).toFixed(0) : '0';
+  console.log(`   Rate: ${finalRate} releases/s\n`);
 
-    if (tagName === 'track' && currentTrack) {
-      // Save track to current release
-      if (currentRelease) {
-        currentRelease.tracks.push({ ...currentTrack });
-      }
-      currentTrack = null;
-    } else if (tagName === 'release' && currentRelease) {
-      // CRITICAL: Store ALL data from currentRelease BEFORE any async operations
-      const releaseId = currentRelease.id;
-      const releaseTitle = currentRelease.title?.trim();
-      const releaseStatus = currentRelease.status;
-      const genres = currentRelease.genres.length > 0 ? currentRelease.genres : null;
-      const styles = currentRelease.styles.length > 0 ? currentRelease.styles : null;
-      const released = currentRelease.released?.trim() || null;
-      const dataQuality = currentRelease.dataQuality?.trim() || null;
-      const masterId = currentRelease.masterId?.trim() || null;
-      const country = currentRelease.country?.trim() || null;
-      const artists = [...currentRelease.artists];
-      const tracks = [...currentRelease.tracks];
-      const videos = currentRelease.videos.map(v => ({
-        youtubeId: extractYouTubeId(v.src),
-        title: v.title?.trim() || null,
-        duration: v.duration,
-      })).filter(v => v.youtubeId); // Only include videos with valid YouTube IDs
-      const extraArtists = currentRelease.extraArtists || [];
+  // Final sync record update
+  await prisma.discogsDataSync.update({
+    where: { dumpDate },
+    data: {
+      releasesProcessed: processed,
+      tracksProcessed: tracksProcessed,
+      songsUpserted: songsUpserted,
+      status: 'completed',
+      completedAt: new Date(),
+    },
+  });
 
-      // Clear currentRelease immediately
-      currentRelease = null;
+  await prisma.$disconnect();
+}
 
-      // Validate required fields
-      if (!releaseId || !releaseTitle || !releaseStatus) {
-        errors++;
-        console.error(`Error: Missing required fields (id: ${releaseId}, title: ${releaseTitle}, status: ${releaseStatus})`);
-        return;
-      }
+// Process a single release
+async function processRelease(releaseXml, parser, stats) {
+  const releaseStartTime = Date.now();
+  
+  try {
+    // Parse the XML
+    const parsed = parser.parse(releaseXml);
+    const release = parsed.release;
 
-      // Wait if another release is currently being processed
-      // CRITICAL: Wait BEFORE incrementing processed to ensure sequential processing
-      while (isProcessing) {
-        await new Promise(resolve => setTimeout(resolve, 10));
-      }
-      
-      // Process this release immediately, waiting for DB to complete
-      isProcessing = true;
-      
-      // Only increment processed AFTER acquiring the lock
-      processed++;
-      
-      // Debug mode: only process first 3 releases (check after incrementing)
-      if (isDebugMode && processed > 3 && !debugModeCompleted) {
-        // Stop the stream in debug mode after 3 releases
-        if (readStream && !readStream.destroyed) {
-          readStream.destroy();
-        }
-        debugModeCompleted = true;
-        
-        // Show debug summary immediately since parser.onend might not fire
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-        const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
-        const totalProcessingTimeSeconds = (totalProcessingTime / 1000).toFixed(1);
-        const elapsedSeconds = parseFloat(elapsed);
-        const dbTimePercentage = elapsedSeconds > 0 ? ((totalProcessingTime / 1000) / elapsedSeconds * 100).toFixed(1) : '0';
-        
-        console.log(`\n📊 Parser ended (debug mode).`);
-        console.log(`\n🐛 DEBUG MODE: Processed ${processed} releases`);
-        console.log(`   Total Time: ${elapsed}s`);
-        console.log(`   DB Processing Time: ${totalProcessingTimeSeconds}s (${dbTimePercentage}% of total)`);
-        console.log(`   Avg Processing Time: ${avgProcessingTime}ms per release`);
-        if (slowestReleaseTitle && slowestReleaseTime > 0) {
-          console.log(`   Slowest Release: "${slowestReleaseTitle}" (${slowestReleaseTime}ms)`);
-        }
-        console.log(`   Tracks Processed: ${tracksProcessed.toLocaleString()}`);
-        console.log(`   Songs Upserted: ${songsUpserted.toLocaleString()}`);
-        console.log(`   Check the database for the records listed above.\n`);
-        
-        // Update sync record one final time
-        try {
-          await prisma.discogsDataSync.update({
-            where: { dumpDate },
-            data: {
-              releasesProcessed: processed,
-              tracksProcessed: tracksProcessed,
-              songsUpserted: songsUpserted,
-            },
-          });
-        } catch (error) {
-          console.error('Error updating sync record:', error);
-        }
-        
-        await prisma.$disconnect();
-        resolveParser();
-        isProcessing = false;
-        return;
-      }
-      
-      const releaseStartTime = Date.now();
-      try {
-        // Prepare release data
-          const releaseData = {
-            id: releaseId,
-            title: releaseTitle,
-            status: releaseStatus,
-            genres: genres,
-            styles: styles,
-            released: released,
-            dataQuality: dataQuality,
-            youtubeVideos: videos.length > 0 ? videos : null,
-            lastUpdated: new Date(),
-          };
-
-            // Upsert release
-          try {
-            const result = await prisma.discogsRelease.upsert({
-              where: { id: releaseData.id },
-              update: {
-                title: releaseData.title,
-                status: releaseData.status,
-                genres: releaseData.genres,
-                styles: releaseData.styles,
-                released: releaseData.released,
-                dataQuality: releaseData.dataQuality,
-                youtubeVideos: releaseData.youtubeVideos,
-                lastUpdated: releaseData.lastUpdated,
-              },
-              create: releaseData,
-            });
-
-            // Store release UUID for later use
-            const releaseUuid = result.id;
-
-            const wasNew = result.createdAt.getTime() === result.updatedAt.getTime();
-            if (wasNew) {
-              created++;
-            } else {
-              updated++;
-              skipped++;
-            }
-
-            // Debug mode: log first few records
-            if (isDebugMode && debugRecords.length < 3) {
-              const debugRecord = {
-                releaseId: releaseId,
-                title: releaseTitle,
-                artists: artists.map(a => a.name).filter(Boolean),
-                trackCount: tracks.length,
-                tracks: tracks.slice(0, 3).map(t => ({
-                  position: t.position,
-                  title: t.title,
-                  duration: t.duration,
-                })),
-                videos: videos.length,
-              };
-              debugRecords.push(debugRecord);
-              console.log(`\n🐛 DEBUG: Expected record #${debugRecords.length}:`);
-              console.log(`   Release ID: ${debugRecord.releaseId}`);
-              console.log(`   Title: ${debugRecord.title}`);
-              console.log(`   Artists: ${debugRecord.artists.join(', ')}`);
-              console.log(`   Tracks: ${debugRecord.trackCount} (showing first 3)`);
-              debugRecord.tracks.forEach(t => {
-                console.log(`     - ${t.position}: ${t.title} (${t.duration || 'N/A'})`);
-              });
-              console.log(`   YouTube Videos: ${debugRecord.videos}`);
-            }
-
-            // Process release artists and collect their UUIDs
-            const releaseArtistUuids = [];
-            const releaseArtistNames = artists
-              .filter(a => a.name)
-              .map(a => a.name.trim());
-            
-            for (const artist of artists) {
-              if (!artist.name) continue;
-
-              const artistName = artist.name.trim();
-
-              // Find artist by name only (we don't care about discogsId)
-              let dbArtist = await prisma.discogsArtist.findUnique({
-                where: { name: artistName },
-                select: { id: true },
-              });
-
-              // Auto-create missing artist with minimal data (name only)
-              if (!dbArtist) {
-                try {
-                  dbArtist = await prisma.discogsArtist.create({
-                    data: {
-                      name: artistName,
-                      lastUpdated: new Date(),
-                    },
-                    select: { id: true },
-                  });
-                  
-                  // Log auto-creation (limit to avoid spam)
-                  if (created < 10 || created % 1000 === 0) {
-                    console.log(`   ⚠️  Auto-created missing artist: "${artistName}"`);
-                  }
-                } catch (error) {
-                  // If creation fails (e.g., duplicate name), try to find again
-                  dbArtist = await prisma.discogsArtist.findUnique({
-                    where: { name: artistName },
-                    select: { id: true },
-                  });
-                  
-                  if (!dbArtist) {
-                    if (errors < 10) {
-                      console.error(`   ❌ Failed to create/find artist "${artistName}":`, error.message);
-                    }
-                    errors++;
-                    continue; // Skip this artist relationship
-                  }
-                }
-              }
-
-              // Store UUID for later use with tracks
-              if (dbArtist) {
-                releaseArtistUuids.push(dbArtist.id);
-
-                // Create/update release-artist relationship
-                try {
-                  await prisma.discogsReleaseArtist.upsert({
-                    where: {
-                      releaseId_artistId: {
-                        releaseId: releaseUuid,
-                        artistId: dbArtist.id,
-                      },
-                    },
-                    update: {},
-                    create: {
-                      releaseId: releaseUuid,
-                      artistId: dbArtist.id,
-                    },
-                  });
-                } catch (error) {
-                  if (errors < 10) {
-                    console.error(`   ❌ Failed to link artist "${artistName}" to release "${releaseTitle}":`, error.message);
-                  }
-                  errors++;
-                }
-              }
-            }
-
-            // Process tracks and create Song records
-            if (isDebugMode && tracks.length > 0) {
-              console.log(`   🐛 DEBUG: Processing ${tracks.length} tracks for release "${releaseTitle}"`);
-            }
-            
-            // Log when starting track processing (for debugging hangs)
-            if (tracks.length > 0 && (isDebugMode || processed <= 10)) {
-              console.log(`   → Processing ${tracks.length} tracks for release #${processed}...`);
-            }
-            
-            for (const track of tracks) {
-              if (!track.title) {
-                if (isDebugMode) {
-                  console.log(`   🐛 DEBUG: Skipping track without title:`, track);
-                }
-                continue; // Skip tracks without titles
-              }
-              
-              tracksProcessed++;
-              
-              // Get artist names for this track (track artists or release artists)
-              const trackArtistNames = track.artists
-                .filter(a => a.name)
-                .map(a => a.name.trim());
-              const songArtistNames = trackArtistNames.length > 0 ? trackArtistNames : releaseArtistNames;
-              const songArtist = songArtistNames.join(', ') || null;
-              
-              // Get track artist string (for comma-splitting logic)
-              const trackArtistString = trackArtistNames.length > 0 
-                ? trackArtistNames.join(', ')
-                : releaseArtistNames.join(', ');
-              
-              // Get release artist string for comparison
-              const releaseArtistString = releaseArtistNames.join(', ');
-              
-              // Parse artist names: if track artist matches release artist, don't split (it's a band name with comma)
-              // Otherwise, split by comma (multiple artists)
-              let artistNamesToProcess = [];
-              if (trackArtistString && trackArtistString === releaseArtistString) {
-                // Matches release artist - treat as single artist (don't split)
-                artistNamesToProcess = [trackArtistString];
-              } else if (trackArtistString) {
-                // Doesn't match - split by comma
-                artistNamesToProcess = trackArtistString.split(',').map(n => n.trim()).filter(Boolean);
-              } else {
-                // No track artists, use release artists
-                artistNamesToProcess = releaseArtistNames;
-              }
-              
-              // Get or create artist UUIDs for this track
-              const trackArtistUuids = [];
-              for (const artistName of artistNamesToProcess) {
-                if (!artistName) continue;
-                
-                // Find artist by name
-                let dbArtist = await prisma.discogsArtist.findUnique({
-                  where: { name: artistName },
-                  select: { id: true },
-                });
-                
-                // Auto-create missing artist with minimal data (name only)
-                if (!dbArtist) {
-                  try {
-                    dbArtist = await prisma.discogsArtist.create({
-                      data: {
-                        name: artistName,
-                        lastUpdated: new Date(),
-                      },
-                      select: { id: true },
-                    });
-                  } catch (error) {
-                    // If creation fails, try to find again (might have been created concurrently)
-                    dbArtist = await prisma.discogsArtist.findUnique({
-                      where: { name: artistName },
-                      select: { id: true },
-                    });
-                    
-                    if (!dbArtist) {
-                      if (errors < 10) {
-                        console.error(`   ❌ Failed to create/find track artist "${artistName}":`, error.message);
-                      }
-                      errors++;
-                      continue; // Skip this artist
-                    }
-                  }
-                }
-                
-                if (dbArtist) {
-                  trackArtistUuids.push(dbArtist.id);
-                }
-              }
-              
-              // Try to match YouTube video to this track (by title similarity)
-              let matchedVideo = null;
-              if (videos.length > 0 && track.title) {
-                const trackTitleLower = track.title.toLowerCase().trim();
-                matchedVideo = videos.find(v => 
-                  v.title && v.title.toLowerCase().includes(trackTitleLower)
-                ) || videos.find(v => 
-                  v.title && trackTitleLower.includes(v.title.toLowerCase().split(' - ').pop()?.trim() || '')
-                );
-              }
-              
-              // Prepare song data
-              const songData = {
-                title: track.title.trim(),
-                artist: songArtist,
-                youtubeId: matchedVideo?.youtubeId || null,
-                duration: track.duration ? parseDuration(track.duration) : null,
-                discogsReleaseId: releaseUuid,
-                discogsTrackPosition: track.position?.trim() || null,
-                artistIds: trackArtistUuids.length > 0 ? trackArtistUuids : null,
-                discogsExtraArtists: track.extraArtists.length > 0 ? track.extraArtists : null,
-                discogsGenres: genres,
-                discogsStyles: styles,
-                discogsCountry: country,
-                discogsReleased: released,
-                discogsMasterId: masterId || null,
-                discogsLastUpdated: new Date(),
-              };
-              
-              // Try to find existing song by youtubeId first (unique constraint)
-              let existingSong = null;
-              if (songData.youtubeId) {
-                existingSong = await prisma.song.findUnique({
-                  where: { youtubeId: songData.youtubeId },
-                });
-              }
-              
-              // If not found by youtubeId, try by title + artist
-              if (!existingSong && songArtist) {
-                existingSong = await prisma.song.findFirst({
-                  where: {
-                    AND: [
-                      { title: songData.title },
-                      { artist: songArtist },
-                    ],
-                  },
-                });
-              }
-              
-              // If not found, try by discogs fields
-              if (!existingSong && songData.discogsReleaseId && songData.discogsTrackPosition) {
-                existingSong = await prisma.song.findFirst({
-                  where: {
-                    AND: [
-                      { discogsReleaseId: songData.discogsReleaseId },
-                      { discogsTrackPosition: songData.discogsTrackPosition },
-                    ],
-                  },
-                });
-              }
-              
-              // Upsert song
-              try {
-                if (existingSong) {
-                  // Update existing song
-                  await prisma.song.update({
-                    where: { id: existingSong.id },
-                    data: {
-                      title: songData.title,
-                      artist: songData.artist,
-                      youtubeId: songData.youtubeId || existingSong.youtubeId, // Don't overwrite existing YouTube ID
-                      duration: songData.duration || existingSong.duration,
-                      discogsReleaseId: songData.discogsReleaseId,
-                      discogsTrackPosition: songData.discogsTrackPosition,
-                      artistIds: songData.artistIds,
-                      discogsExtraArtists: songData.discogsExtraArtists,
-                      discogsGenres: songData.discogsGenres,
-                      discogsStyles: songData.discogsStyles,
-                      discogsCountry: songData.discogsCountry,
-                      discogsReleased: songData.discogsReleased,
-                      discogsMasterId: songData.discogsMasterId,
-                      discogsLastUpdated: songData.discogsLastUpdated,
-                    },
-                  });
-                  if (isDebugMode) {
-                    console.log(`   🐛 DEBUG: Updated song "${songData.title}" by ${songArtist}`);
-                  }
-                } else {
-                  // Create new song
-                  await prisma.song.create({
-                    data: songData,
-                  });
-                  if (isDebugMode) {
-                    console.log(`   🐛 DEBUG: Created song "${songData.title}" by ${songArtist} (position: ${songData.discogsTrackPosition})`);
-                  }
-                }
-                songsUpserted++;
-              } catch (error) {
-                console.error(`   ❌ Failed to upsert song "${songData.title}":`, error.message);
-                if (isDebugMode || errors < 10) {
-                  console.error(`   Full error:`, error);
-                }
-                errors++;
-              }
-            }
-            
-            // Log when track processing completes (for debugging hangs)
-            if (tracks.length > 0 && (isDebugMode || processed <= 10)) {
-              console.log(`   ✓ Completed processing ${tracks.length} tracks for release #${processed}`);
-            }
-
-          } catch (error) {
-            if (errors < 10) {
-              console.error(`Error upserting release "${releaseTitle}":`, error.message);
-            }
-            errors++;
-          }
-
-          // Log every release in debug mode or first 10 releases
-          if (isDebugMode || processed <= 10) {
-            console.log(`   ✓ Processed release #${processed}: "${releaseTitle}" (${tracks.length} tracks, ${artists.length} artists)`);
-          }
-
-          // Update sync record periodically (every 1000 releases)
-          if (processed - lastSyncUpdate >= 1000) {
-            await prisma.discogsDataSync.update({
-              where: { dumpDate },
-              data: {
-                releasesProcessed: processed,
-                tracksProcessed: tracksProcessed,
-                songsUpserted: songsUpserted,
-              },
-            });
-            lastSyncUpdate = processed;
-          }
-
-          // Log progress every 100 releases
-          if (processed % 100 === 0) {
-            const elapsed = (Date.now() - startTime) / 1000;
-            const newlyProcessed = processed - skipped;
-            const rate = newlyProcessed > 0 ? newlyProcessed / elapsed : 0;
-            const releaseProcessingTime = (Date.now() - releaseStartTime);
-            totalProcessingTime += releaseProcessingTime;
-            
-            // Track slowest release
-            if (releaseProcessingTime > slowestReleaseTime) {
-              slowestReleaseTime = releaseProcessingTime;
-              slowestReleaseTitle = releaseTitle;
-            }
-            
-            const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
-            console.log(`   Total: ${processed.toLocaleString()} | New: ${newlyProcessed.toLocaleString()} | Skipped: ${skipped.toLocaleString()} | Created: ${created.toLocaleString()} | Updated: ${updated.toLocaleString()} | Tracks: ${tracksProcessed.toLocaleString()} | Songs: ${songsUpserted.toLocaleString()} | Errors: ${errors} | Rate: ${rate.toFixed(0)}/s | Avg: ${avgProcessingTime}ms/release`);
-          } else {
-            // Still track timing even if not logging
-            const releaseProcessingTime = (Date.now() - releaseStartTime);
-            totalProcessingTime += releaseProcessingTime;
-            
-            // Track slowest release
-            if (releaseProcessingTime > slowestReleaseTime) {
-              slowestReleaseTime = releaseProcessingTime;
-              slowestReleaseTitle = releaseTitle;
-            }
-          }
-      } catch (error) {
-        const errorTitle = releaseTitle || releaseId || 'unknown';
-        console.error(`Error processing release "${errorTitle}":`, error.message);
-        if (errors < 10) {
-          console.error(`   Full error:`, error);
-        }
-        errors++;
-      } finally {
-        const releaseProcessingTime = (Date.now() - releaseStartTime);
-        totalProcessingTime += releaseProcessingTime;
-        isProcessing = false;
-      }
-
+    if (!release || !release.id || !release.title || !release.status) {
+      stats.errors++;
       return;
     }
 
-    elementStack.pop();
-    currentElement = elementStack.length > 0 ? elementStack[elementStack.length - 1] : null;
-  };
+    const releaseId = release.id;
+    const releaseTitle = release.title.trim();
+    const releaseStatus = release.status;
 
-  // Process remaining batch
-  parser.onend = async () => {
-    try {
-      console.log(`\n📊 Parser ended.`);
-      console.log(`   Waiting for final release to finish processing...`);
+    // Extract release data
+    const genres = release.genres?.genre ? (Array.isArray(release.genres.genre) ? release.genres.genre : [release.genres.genre]) : [];
+    const styles = release.styles?.style ? (Array.isArray(release.styles.style) ? release.styles.style : [release.styles.style]) : [];
+    const released = release.released?.trim() || null;
+    const dataQuality = release.dataQuality?.trim() || null;
+    const masterId = release.masterId?.trim() || null;
+    const country = release.country?.trim() || null;
 
-      // Wait for any in-flight release to finish processing
-      while (isProcessing) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      console.log(`   Processed so far: ${processed}`);
-
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-      
-      if (isDebugMode && !debugModeCompleted) {
-        // Only show summary if we haven't already shown it (in case parser.onend fires after manual completion)
-        debugModeCompleted = true;
-        const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
-        const totalProcessingTimeSeconds = (totalProcessingTime / 1000).toFixed(1);
-        const elapsedSeconds = parseFloat(elapsed);
-        const dbTimePercentage = elapsedSeconds > 0 ? ((totalProcessingTime / 1000) / elapsedSeconds * 100).toFixed(1) : '0';
-        
-        console.log(`\n🐛 DEBUG MODE: Processed ${processed} releases`);
-        console.log(`   Total Time: ${elapsed}s`);
-        console.log(`   DB Processing Time: ${totalProcessingTimeSeconds}s (${dbTimePercentage}% of total)`);
-        console.log(`   Avg Processing Time: ${avgProcessingTime}ms per release`);
-        if (slowestReleaseTitle && slowestReleaseTime > 0) {
-          console.log(`   Slowest Release: "${slowestReleaseTitle}" (${slowestReleaseTime}ms)`);
+    // Extract artists
+    const artists = [];
+    if (release.artists?.artist) {
+      const artistArray = Array.isArray(release.artists.artist) ? release.artists.artist : [release.artists.artist];
+      for (const artist of artistArray) {
+        if (artist.name) {
+          artists.push({ name: artist.name.trim() });
         }
-        console.log(`   Tracks Processed: ${tracksProcessed.toLocaleString()}`);
-        console.log(`   Songs Upserted: ${songsUpserted.toLocaleString()}`);
-        console.log(`   Check the database for the records listed above.\n`);
-        await prisma.$disconnect();
-        resolveParser();
-        return;
       }
+    }
 
-      const newlyProcessed = processed - skipped;
-      const rate = processed > 0 ? (processed / parseFloat(elapsed)).toFixed(0) : '0';
-
-      const avgProcessingTime = processed > 0 ? (totalProcessingTime / processed).toFixed(1) : '0';
-      const totalProcessingTimeSeconds = (totalProcessingTime / 1000).toFixed(1);
-      const elapsedSeconds = parseFloat(elapsed);
-      const dbTimePercentage = elapsedSeconds > 0 ? ((totalProcessingTime / 1000) / elapsedSeconds * 100).toFixed(1) : '0';
-      
-      console.log(`\n✅ Processing complete!`);
-      console.log(`   Total Releases in XML: ${processed.toLocaleString()}`);
-      console.log(`   Skipped (already in DB): ${skipped.toLocaleString()}`);
-      console.log(`   Newly Processed: ${newlyProcessed.toLocaleString()}`);
-      console.log(`   Created: ${created.toLocaleString()}`);
-      console.log(`   Updated: ${updated.toLocaleString()}`);
-      console.log(`   Tracks Processed: ${tracksProcessed.toLocaleString()}`);
-      console.log(`   Songs Upserted: ${songsUpserted.toLocaleString()}`);
-      console.log(`   Errors: ${errors}`);
-      console.log(`   Total Time: ${elapsed}s`);
-      console.log(`   DB Processing Time: ${totalProcessingTimeSeconds}s (${dbTimePercentage}% of total)`);
-      console.log(`   Avg Processing Time: ${avgProcessingTime}ms per release`);
-      if (slowestReleaseTitle && slowestReleaseTime > 100) {
-        console.log(`   Slowest Release: "${slowestReleaseTitle}" (${slowestReleaseTime}ms)`);
+    // Extract tracks
+    const tracks = [];
+    if (release.tracklist?.track) {
+      const trackArray = Array.isArray(release.tracklist.track) ? release.tracklist.track : [release.tracklist.track];
+      for (const track of trackArray) {
+        if (track.title) {
+          const trackArtists = [];
+          if (track.artists?.artist) {
+            const trackArtistArray = Array.isArray(track.artists.artist) ? track.artists.artist : [track.artists.artist];
+            for (const artist of trackArtistArray) {
+              if (artist.name) {
+                trackArtists.push({ name: artist.name.trim() });
+              }
+            }
+          }
+          
+          const extraArtists = [];
+          if (track.extraartists?.artist) {
+            const extraArtistArray = Array.isArray(track.extraartists.artist) ? track.extraartists.artist : [track.extraartists.artist];
+            for (const artist of extraArtistArray) {
+              extraArtists.push({
+                name: artist.name?.trim() || null,
+                role: artist.role || null,
+              });
+            }
+          }
+          
+          tracks.push({
+            position: track.position ? String(track.position).trim() : null,
+            title: track.title.trim(),
+            duration: track.duration ? String(track.duration).trim() : null,
+            artists: trackArtists,
+            extraArtists: extraArtists,
+          });
+        }
       }
-      const finalRate = newlyProcessed > 0 ? (newlyProcessed / elapsedSeconds).toFixed(0) : '0';
-      console.log(`   Rate: ${finalRate} releases/s\n`);
+    }
 
-      // Final sync record update
-      await prisma.discogsDataSync.update({
-        where: { dumpDate },
-        data: {
-          releasesProcessed: processed,
-          tracksProcessed: tracksProcessed,
-          songsUpserted: songsUpserted,
-          status: 'completed',
-          completedAt: new Date(),
-        },
+    // Extract videos
+    const videos = [];
+    if (release.videos?.video) {
+      const videoArray = Array.isArray(release.videos.video) ? release.videos.video : [release.videos.video];
+      for (const video of videoArray) {
+        const youtubeId = extractYouTubeId(video.src);
+        if (youtubeId) {
+          videos.push({
+            youtubeId: youtubeId,
+            title: video.title?.trim() || null,
+            duration: video.duration ? parseInt(video.duration) : null,
+          });
+        }
+      }
+    }
+
+    // Prepare release data
+    const releaseData = {
+      title: releaseTitle,
+      status: releaseStatus,
+      genres: genres.length > 0 ? genres : null,
+      styles: styles.length > 0 ? styles : null,
+      released: released,
+      dataQuality: dataQuality,
+      youtubeVideos: videos.length > 0 ? videos : null,
+      lastUpdated: new Date(),
+    };
+
+    const result = await prisma.discogsRelease.create({
+      data: releaseData,
+    });
+
+    const releaseUuid = result.id;
+    stats.created++;
+
+    // Process release artists
+    const releaseArtistUuids = [];
+    const releaseArtistNames = artists.map(a => a.name).filter(Boolean);
+    
+    for (const artist of artists) {
+      if (!artist.name) continue;
+
+      const artistName = artist.name.trim();
+
+      let dbArtist = await prisma.discogsArtist.findUnique({
+        where: { name: artistName },
+        select: { id: true },
       });
 
-      await prisma.$disconnect();
-      resolveParser();
-    } catch (error) {
-      await prisma.$disconnect();
-      rejectParser(error);
+      if (!dbArtist) {
+        try {
+          dbArtist = await prisma.discogsArtist.create({
+            data: {
+              name: artistName,
+              lastUpdated: new Date(),
+            },
+            select: { id: true },
+          });
+        } catch (error) {
+          dbArtist = await prisma.discogsArtist.findUnique({
+            where: { name: artistName },
+            select: { id: true },
+          });
+          
+          if (!dbArtist) {
+            if (stats.errors <= 10) {
+              console.error(`Error creating/finding artist "${artistName}":`, error.message);
+            }
+            stats.errors++;
+            continue;
+          }
+        }
+      }
+
+      if (dbArtist) {
+        releaseArtistUuids.push(dbArtist.id);
+
+        try {
+          await prisma.discogsReleaseArtist.upsert({
+            where: {
+              releaseId_artistId: {
+                releaseId: releaseUuid,
+                artistId: dbArtist.id,
+              },
+            },
+            update: {},
+            create: {
+              releaseId: releaseUuid,
+              artistId: dbArtist.id,
+            },
+          });
+        } catch (error) {
+          if (stats.errors <= 10) {
+            console.error(`Error linking artist "${artistName}" to release:`, error.message);
+          }
+          stats.errors++;
+        }
+      }
     }
-  };
 
-  // Start processing
-  console.log(`🚀 Starting XML stream processing...\n`);
-  console.log(`   Reading from: ${xmlPath}\n`);
-
-  readStream = fs.createReadStream(xmlPath);
-
-  readStream.on('error', (err) => {
-    console.error('❌ Stream error:', err);
-    rejectParser(err);
-  });
-
-  readStream.on('data', (chunk) => {
-    chunkCount++;
-    // In debug mode, we'll stop after processing 3 releases, not 3 chunks
-  });
-
-  readStream.on('end', () => {
-    if (!isDebugMode) {
-      console.log(`   Stream ended after ${chunkCount} chunks`);
+    // Process tracks
+    for (const track of tracks) {
+      if (!track.title) continue;
+      
+      stats.tracksProcessed++;
+      
+      // Get artist names for this track
+      const trackArtistNames = track.artists.map(a => a.name).filter(Boolean);
+      const songArtistNames = trackArtistNames.length > 0 ? trackArtistNames : releaseArtistNames;
+      const songArtist = songArtistNames.join(', ') || null;
+      
+      // Get track artist string (for comma-splitting logic)
+      const trackArtistString = trackArtistNames.length > 0 
+        ? trackArtistNames.join(', ')
+        : releaseArtistNames.join(', ');
+      
+      const releaseArtistString = releaseArtistNames.join(', ');
+      
+      // Parse artist names: if track artist matches release artist, don't split
+      let artistNamesToProcess = [];
+      if (trackArtistString && trackArtistString === releaseArtistString) {
+        artistNamesToProcess = [trackArtistString];
+      } else if (trackArtistString) {
+        artistNamesToProcess = trackArtistString.split(',').map(n => n.trim()).filter(Boolean);
+      } else {
+        artistNamesToProcess = releaseArtistNames;
+      }
+      
+      // Get or create artist UUIDs for this track
+      const trackArtistUuids = [];
+      for (const artistName of artistNamesToProcess) {
+        if (!artistName) continue;
+        
+        let dbArtist = await prisma.discogsArtist.findUnique({
+          where: { name: artistName },
+          select: { id: true },
+        });
+        
+        if (!dbArtist) {
+          try {
+            dbArtist = await prisma.discogsArtist.create({
+              data: {
+                name: artistName,
+                lastUpdated: new Date(),
+              },
+              select: { id: true },
+            });
+          } catch (error) {
+            dbArtist = await prisma.discogsArtist.findUnique({
+              where: { name: artistName },
+              select: { id: true },
+            });
+            
+            if (!dbArtist) {
+              if (stats.errors <= 10) {
+                console.error(`Error creating/finding track artist "${artistName}":`, error.message);
+              }
+              stats.errors++;
+              continue;
+            }
+          }
+        }
+        
+        if (dbArtist) {
+          trackArtistUuids.push(dbArtist.id);
+        }
+      }
+      
+      // Try to match YouTube video
+      let matchedVideo = null;
+      if (videos.length > 0 && track.title) {
+        const trackTitleLower = track.title.toLowerCase().trim();
+        matchedVideo = videos.find(v => 
+          v.title && v.title.toLowerCase().includes(trackTitleLower)
+        ) || videos.find(v => 
+          v.title && trackTitleLower.includes(v.title.toLowerCase().split(' - ').pop()?.trim() || '')
+        );
+      }
+      
+      // Prepare song data
+      const songData = {
+        title: track.title.trim(),
+        artist: songArtist,
+        youtubeId: matchedVideo?.youtubeId || null,
+        duration: track.duration ? parseDuration(track.duration) : null,
+        releaseId: releaseUuid,
+        discogsTrackPosition: track.position ? String(track.position).trim() : null,
+        artistIds: trackArtistUuids.length > 0 ? trackArtistUuids : null,
+        discogsExtraArtists: track.extraArtists.length > 0 ? track.extraArtists : null,
+        discogsGenres: genres.length > 0 ? genres : null,
+        discogsStyles: styles.length > 0 ? styles : null,
+        discogsCountry: country,
+        discogsReleased: released,
+        discogsMasterId: masterId || null,
+        discogsLastUpdated: new Date(),
+      };
+      
+      // Try to find existing song
+      let existingSong = null;
+      if (songData.youtubeId) {
+        existingSong = await prisma.song.findUnique({
+          where: { youtubeId: songData.youtubeId },
+        });
+      }
+      
+      if (!existingSong && songArtist) {
+        existingSong = await prisma.song.findFirst({
+          where: {
+            AND: [
+              { title: songData.title },
+              { artist: songArtist },
+            ],
+          },
+        });
+      }
+      
+      if (!existingSong && songData.releaseId && songData.discogsTrackPosition) {
+        existingSong = await prisma.song.findFirst({
+          where: {
+            AND: [
+              { releaseId: songData.releaseId },
+              { discogsTrackPosition: songData.discogsTrackPosition },
+            ],
+          },
+        });
+      }
+      
+      // Upsert song
+      try {
+        if (existingSong) {
+          await prisma.song.update({
+            where: { id: existingSong.id },
+            data: {
+              title: songData.title,
+              artist: songData.artist,
+              youtubeId: songData.youtubeId || existingSong.youtubeId,
+              duration: songData.duration || existingSong.duration,
+              releaseId: songData.releaseId,
+              discogsTrackPosition: songData.discogsTrackPosition,
+              artistIds: songData.artistIds,
+              discogsExtraArtists: songData.discogsExtraArtists,
+              discogsGenres: songData.discogsGenres,
+              discogsStyles: songData.discogsStyles,
+              discogsCountry: songData.discogsCountry,
+              discogsReleased: songData.discogsReleased,
+              discogsMasterId: songData.discogsMasterId,
+              discogsLastUpdated: songData.discogsLastUpdated,
+            },
+          });
+        } else {
+          await prisma.song.create({
+            data: songData,
+          });
+        }
+        stats.songsUpserted++;
+      } catch (error) {
+        if (stats.errors <= 10) {
+          console.error(`Error upserting song "${songData.title}":`, error.message);
+        }
+        stats.errors++;
+      }
     }
-  });
 
-  parser.on('ready', () => {
-    console.log('   Parser ready, starting to parse...\n');
-  });
+    // Update sync record periodically
+    if (stats.processed - stats.lastSyncUpdate >= 1000) {
+      await prisma.discogsDataSync.update({
+        where: { dumpDate: stats.dumpDate },
+        data: {
+          releasesProcessed: stats.processed,
+          tracksProcessed: stats.tracksProcessed,
+          songsUpserted: stats.songsUpserted,
+        },
+      });
+      stats.lastSyncUpdate = stats.processed;
+    }
 
-  readStream.pipe(parser);
+    const releaseProcessingTime = Date.now() - releaseStartTime;
+    stats.totalProcessingTime += releaseProcessingTime;
+    
+    if (releaseProcessingTime > stats.slowestReleaseTime) {
+      stats.slowestReleaseTime = releaseProcessingTime;
+      stats.slowestReleaseTitle = releaseTitle;
+    }
 
-  // Wait for parser to complete
-  return parserPromise;
+    if (stats.processed % 100 === 0) {
+      const elapsed = (Date.now() - stats.startTime) / 1000;
+      const newlyProcessed = stats.processed - stats.skipped;
+      const rate = stats.processed > 0 ? stats.processed / elapsed : 0;
+      const avgProcessingTime = stats.processed > 0 ? (stats.totalProcessingTime / stats.processed).toFixed(1) : '0';
+      console.log(`   Total: ${stats.processed.toLocaleString()} | New: ${newlyProcessed.toLocaleString()} | Skipped: ${stats.skipped.toLocaleString()} | Created: ${stats.created.toLocaleString()} | Updated: ${stats.updated.toLocaleString()} | Tracks: ${stats.tracksProcessed.toLocaleString()} | Songs: ${stats.songsUpserted.toLocaleString()} | Errors: ${stats.errors} | Rate: ${rate.toFixed(0)}/s | Avg: ${avgProcessingTime}ms/release`);
+    }
+  } catch (error) {
+    stats.errors++;
+    if (stats.errors <= 10) {
+      console.error(`Error processing release:`, error.message);
+    }
+  }
 }
 
 // Run if called directly
@@ -963,4 +655,4 @@ if (process.argv[1]?.includes('process-discogs-releases.js')) {
     });
 }
 
-export { processDiscogsReleases };
+export default processDiscogsReleases;

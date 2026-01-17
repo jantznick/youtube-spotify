@@ -30,7 +30,6 @@ router.get('/', async (req, res) => {
       select: {
         id: true,
         name: true,
-        discogsId: true,
       },
     });
 
@@ -72,7 +71,6 @@ router.get('/', async (req, res) => {
     const formattedArtists = artists.map((artist) => ({
       id: artist.id,
       name: artist.name,
-      discogsId: artist.discogsId,
     }));
 
     // Format songs - artistIds is already stored as UUIDs
@@ -117,7 +115,7 @@ router.get('/song/:id', async (req, res) => {
       youtubeId: song.youtubeId,
       thumbnailUrl: song.thumbnailUrl || (song.youtubeId ? `https://i.ytimg.com/vi/${song.youtubeId}/hqdefault.jpg` : null),
       duration: song.duration,
-      discogsReleaseId: song.discogsReleaseId,
+      releaseId: song.releaseId,
       discogsGenres: song.discogsGenres || null,
       discogsStyles: song.discogsStyles || null,
       discogsCountry: song.discogsCountry,
@@ -181,7 +179,7 @@ router.get('/artist/:id', async (req, res) => {
         // Get all songs for this release
         const songs = await prisma.song.findMany({
           where: {
-            discogsReleaseId: release.id,
+            releaseId: release.id,
           },
           orderBy: {
             discogsTrackPosition: 'asc',
@@ -227,7 +225,6 @@ router.get('/artist/:id', async (req, res) => {
     const formattedArtist = {
       id: artist.id,
       name: artist.name,
-      discogsId: artist.discogsId,
       profile: artist.profile,
       releases: uniqueReleases,
     };
