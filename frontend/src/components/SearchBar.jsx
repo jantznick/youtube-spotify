@@ -12,6 +12,12 @@ export default function SearchBar() {
   const [activeTab, setActiveTab] = useState('songs'); // 'songs' or 'artists'
   const searchRef = useRef(null);
   const dropdownRef = useRef(null);
+  const queryRef = useRef(query); // Track current query value for race condition checks
+
+  // Update ref whenever query changes
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
 
   // Debounced search
   useEffect(() => {
@@ -22,13 +28,21 @@ export default function SearchBar() {
     }
 
     const timeoutId = setTimeout(async () => {
+      const searchQuery = query; // Capture query at time of API call
       try {
-        const data = await searchAPI.search(query);
-        setResults(data);
-        setIsOpen(true);
+        const data = await searchAPI.search(searchQuery);
+        // Only update results if the response matches the CURRENT search bar value (prevents race conditions)
+        // Compare with the current query value from the ref (which is always up-to-date)
+        if (!(results.artists.length > 0 || results.songs.length > 0) || data.query === queryRef.current) {
+          setResults(data);
+          setIsOpen(true);
+        }
       } catch (error) {
         console.error('Search error:', error);
-        setResults({ artists: [], songs: [] });
+        // Only clear results if query hasn't changed
+        if (queryRef.current === searchQuery) {
+          setResults({ artists: [], songs: [] });
+        }
       }
     }, 300);
 

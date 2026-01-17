@@ -10,6 +10,7 @@ router.get('/', async (req, res) => {
     
     if (!query || query.length < 3) {
       return res.json({
+        query: query || '', // Include query even for empty responses
         artists: [],
         songs: [],
       });
@@ -92,6 +93,7 @@ router.get('/', async (req, res) => {
     }));
 
     res.json({
+      query: query, // Include query in response to prevent race conditions
       artists: formattedArtists,
       songs: formattedSongs,
     });
