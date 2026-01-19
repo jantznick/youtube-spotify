@@ -229,7 +229,7 @@ function Home() {
               </div>
               <div className="w-px h-4 bg-border"></div>
               <div className="flex items-center gap-2">
-                <span className="font-medium text-text-primary">{stats.songCount.toLocaleString()}</span>
+                <span className="font-medium text-text-primary">{stats.allSongsCount.toLocaleString()}</span>
                 <span>Songs Available</span>
               </div>
             </div>

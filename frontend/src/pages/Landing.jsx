@@ -5,7 +5,7 @@ import { feedAPI } from '../api/api';
 
 function Landing() {
   const { openAuthModal } = useAuthModal();
-  const [stats, setStats] = useState({ artistCount: 0, songCount: 0 });
+  const [stats, setStats] = useState({ artistCount: 0, allSongsCount: 0 });
 
   useEffect(() => {
     const loadStats = async () => {
@@ -61,7 +61,7 @@ function Landing() {
           {/* Stats Section */}
           <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mb-8 sm:mb-10 md:mb-12">
             <span className="text-3xl sm:text-4xl md:text-5xl font-bold text-text-primary bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              {stats.songCount.toLocaleString()}
+              {stats.allSongsCount.toLocaleString()}
             </span>
             <span className="text-base sm:text-lg md:text-xl text-text-secondary">songs from</span>
             <span className="text-3xl sm:text-4xl md:text-5xl font-bold text-text-primary bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">

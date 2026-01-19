@@ -6,6 +6,8 @@ export const playerStore = create((set, get) => ({
   currentIndex: 0,
   isPlaying: false,
   queue: [],
+  isSearchingYoutube: false,
+  youtubeSearchFailed: false,
 
   setCurrentSong: (song, playlist = null, index = 0, preserveQueue = false) => {
     const currentState = get();
@@ -21,6 +23,9 @@ export const playerStore = create((set, get) => ({
     // Only autoplay if song has a YouTube ID
     const hasYouTubeId = !!song?.youtubeId;
     
+    // Reset search states when changing songs
+    const isSearching = !hasYouTubeId;
+    
     if (preserveQueue) {
       // When playing from queue, just update the current song and index
       const { queue } = get();
@@ -31,6 +36,8 @@ export const playerStore = create((set, get) => ({
         currentPlaylist: playlist,
         currentIndex: validIndex,
         isPlaying: hasYouTubeId, // Only autoplay if has YouTube ID
+        isSearchingYoutube: isSearching,
+        youtubeSearchFailed: false,
       });
     } else {
       // When playing from playlist or elsewhere, set the queue
@@ -43,6 +50,8 @@ export const playerStore = create((set, get) => ({
         currentIndex: validIndex,
         queue: newQueue,
         isPlaying: hasYouTubeId, // Only autoplay if has YouTube ID
+        isSearchingYoutube: isSearching,
+        youtubeSearchFailed: false,
       });
     }
     
@@ -110,6 +119,8 @@ export const playerStore = create((set, get) => ({
         currentIndex: 0,
         queue: [song],
         isPlaying: !!song?.youtubeId, // Only autoplay if has YouTube ID
+        isSearchingYoutube: !song?.youtubeId,
+        youtubeSearchFailed: false,
       });
     }
   },
@@ -156,6 +167,13 @@ export const playerStore = create((set, get) => ({
     isPlaying: false,
     queue: [],
     showQueue: false,
+    isSearchingYoutube: false,
+    youtubeSearchFailed: false,
+  }),
+  
+  setYoutubeSearchState: (isSearching, failed = false) => set({
+    isSearchingYoutube: isSearching,
+    youtubeSearchFailed: failed,
   }),
 }));
 

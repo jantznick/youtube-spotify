@@ -217,3 +217,74 @@ export async function sendPasswordResetEmail(email, username, resetLink) {
     return { success: false, error };
   }
 }
+
+/**
+ * Send email notification when a video report is resolved with a new YouTube ID
+ */
+export async function sendVideoReportResolvedEmail(email, username, songTitle, artist, oldYoutubeId, newYoutubeId) {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: email,
+      subject: 'Your Video Report Has Been Resolved - MusicDocks',
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Video Report Resolved</title>
+          </head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 28px;">MusicDocks</h1>
+            </div>
+            <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb;">
+              <h2 style="color: #1f2937; margin-top: 0;">Your Video Report Has Been Resolved</h2>
+              <p style="color: #4b5563; font-size: 16px;">Hi ${username || email || 'there'},</p>
+              <p style="color: #4b5563; font-size: 16px;">Thank you for reporting that the video for "${songTitle}" didn't match the song. We've reviewed your report and updated the video.</p>
+
+              ${newYoutubeId ? `
+                <p style="color: #4b5563; font-size: 16px;">The video has been updated with a new YouTube ID. You can now enjoy the correct video when playing this song!</p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${FRONTEND_URL}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                    Visit MusicDocks
+                  </a>
+                </div>
+              ` : `
+                <p style="color: #4b5563; font-size: 16px;">The incorrect video has been removed. We're working on finding a replacement video for this song.</p>
+              `}
+
+              <p style="color: #6b7280; font-size: 14px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                Thank you for helping us improve MusicDocks!
+              </p>
+            </div>
+          </body>
+        </html>
+      `,
+      text: `
+        Your Video Report Has Been Resolved - MusicDocks
+
+        Hi ${username || email || 'there'},
+
+        Thank you for reporting that the video for "${songTitle}" didn't match the song. We've reviewed your report and updated the video.
+
+        ${newYoutubeId ? 'The video has been updated with a new YouTube ID. You can now enjoy the correct video when playing this song!' : "The incorrect video has been removed. We're working on finding a replacement video for this song."}
+
+        Visit MusicDocks: ${FRONTEND_URL}
+
+        Thank you for helping us improve MusicDocks!
+      `,
+    });
+
+    if (error) {
+      console.error('Resend error:', error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Error sending video report resolved email:', error);
+    return { success: false, error };
+  }
+}

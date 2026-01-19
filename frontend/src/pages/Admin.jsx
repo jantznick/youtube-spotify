@@ -7,8 +7,11 @@ import ConfirmModal from '../components/ConfirmModal';
 function Admin() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('feed'); // 'feed' or 'reports'
   const [feedEntries, setFeedEntries] = useState([]);
+  const [videoReports, setVideoReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [reportsLoading, setReportsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -24,10 +27,15 @@ function Admin() {
     tagline: '',
   });
   const [confirmModal, setConfirmModal] = useState(null);
+  const [youtubeIdInputModal, setYoutubeIdInputModal] = useState(null);
 
   useEffect(() => {
-    loadFeedEntries();
-  }, []);
+    if (activeTab === 'feed') {
+      loadFeedEntries();
+    } else if (activeTab === 'reports') {
+      loadVideoReports();
+    }
+  }, [activeTab]);
 
   const loadFeedEntries = async () => {
     try {
@@ -119,6 +127,84 @@ function Admin() {
     });
   };
 
+  const loadVideoReports = async () => {
+    try {
+      setReportsLoading(true);
+      const data = await adminAPI.getVideoReports();
+      setVideoReports(data.reports || []);
+      setError(null);
+    } catch (err) {
+      console.error('[ADMIN PAGE] Error loading video reports:', err);
+      setError(`Failed to load video reports: ${err.message}`);
+    } finally {
+      setReportsLoading(false);
+    }
+  };
+
+  const handleResolveReport = async (reportId, newYoutubeId = null, resolutionNote = null) => {
+    try {
+      setProcessing(true);
+      setError(null);
+      setSuccessMessage(null);
+      await adminAPI.resolveVideoReport(reportId, newYoutubeId, resolutionNote);
+      setSuccessMessage(newYoutubeId ? `Report resolved and new video ID set: ${newYoutubeId}` : 'Report resolved and video ID removed');
+      await loadVideoReports();
+    } catch (err) {
+      setError(err.message || 'Failed to resolve report');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleRemoveAndAddNew = (report) => {
+    setYoutubeIdInputModal({
+      report,
+      onConfirm: (youtubeId) => {
+        const cleanId = youtubeId.trim();
+        // Basic validation - YouTube IDs are 11 characters
+        if (cleanId.length === 11) {
+          // Close input modal first, then show confirm modal
+          setYoutubeIdInputModal(null);
+          // Use setTimeout to ensure state update completes before showing next modal
+          setTimeout(() => {
+            setConfirmModal({
+              message: `Set YouTube ID "${cleanId}" for "${report.Song?.title}"?`,
+              onConfirm: () => {
+                handleResolveReport(report.id, cleanId);
+                setConfirmModal(null);
+              },
+              onCancel: () => {
+                setConfirmModal(null);
+              },
+              confirmText: 'Set Video ID',
+              cancelText: 'Cancel',
+              type: 'warning',
+            });
+          }, 0);
+        } else {
+          setError('YouTube video ID must be 11 characters long');
+          setYoutubeIdInputModal(null);
+        }
+      },
+      onCancel: () => setYoutubeIdInputModal(null),
+    });
+  };
+
+  const handleDismissReport = async (reportId) => {
+    try {
+      setProcessing(true);
+      setError(null);
+      setSuccessMessage(null);
+      await adminAPI.dismissVideoReport(reportId);
+      setSuccessMessage('Report dismissed');
+      await loadVideoReports();
+    } catch (err) {
+      setError(err.message || 'Failed to dismiss report');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleCancelEdit = () => {
     setEditingEntry(null);
     setEditFormData({ genre: '', tagline: '' });
@@ -162,7 +248,36 @@ function Admin() {
       <div className="max-w-6xl mx-auto">
         <div className="mb-6 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-2">Admin Panel</h1>
-          <p className="text-sm sm:text-base text-text-muted">Manage homepage feed</p>
+          <p className="text-sm sm:text-base text-text-muted">Manage homepage feed and video reports</p>
+        </div>
+
+        {/* Tabs */}
+        <div className="mb-6 flex gap-4 border-b border-border">
+          <button
+            onClick={() => setActiveTab('feed')}
+            className={`px-4 py-2 font-medium transition-colors ${
+              activeTab === 'feed'
+                ? 'text-primary border-b-2 border-primary'
+                : 'text-text-muted hover:text-text-primary'
+            }`}
+          >
+            Feed Entries
+          </button>
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`px-4 py-2 font-medium transition-colors ${
+              activeTab === 'reports'
+                ? 'text-primary border-b-2 border-primary'
+                : 'text-text-muted hover:text-text-primary'
+            }`}
+          >
+            Video Reports
+            {videoReports.filter(r => r.status === 'pending').length > 0 && (
+              <span className="ml-2 px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
+                {videoReports.filter(r => r.status === 'pending').length}
+              </span>
+            )}
+          </button>
         </div>
 
         {error && (
@@ -177,16 +292,18 @@ function Admin() {
           </div>
         )}
 
-        <div className="mb-6">
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="w-full sm:w-auto px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition text-sm sm:text-base"
-          >
-            {showAddForm ? 'Cancel' : '+ Add Feed Entry'}
-          </button>
-        </div>
+        {activeTab === 'feed' && (
+          <>
+            <div className="mb-6">
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="w-full sm:w-auto px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition text-sm sm:text-base"
+              >
+                {showAddForm ? 'Cancel' : '+ Add Feed Entry'}
+              </button>
+            </div>
 
-        {showAddForm && (
+            {showAddForm && (
           <div className="mb-6 sm:mb-8 p-4 sm:p-6 bg-bg-card rounded-lg border border-border">
             <h2 className="text-xl sm:text-2xl font-bold mb-4">Add Feed Entry</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -333,6 +450,127 @@ function Admin() {
             No feed entries yet. Click "Add Feed Entry" to create one.
           </div>
         )}
+          </>
+        )}
+
+        {activeTab === 'reports' && (
+          <div className="space-y-4">
+            {reportsLoading ? (
+              <div className="text-center py-8 text-text-muted">Loading reports...</div>
+            ) : videoReports.length === 0 ? (
+              <div className="text-center py-8 text-text-muted">No video reports</div>
+            ) : (
+              videoReports.map((report) => (
+                <div
+                  key={report.id}
+                  className={`p-4 sm:p-6 bg-bg-card rounded-lg border ${
+                    report.status === 'pending' ? 'border-yellow-500/50' : 'border-border'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="font-semibold text-text-primary">{report.Song?.title || 'Unknown Song'}</h3>
+                        <span
+                          className={`px-2 py-1 text-xs rounded ${
+                            report.status === 'pending'
+                              ? 'bg-yellow-500/20 text-yellow-500'
+                              : report.status === 'resolved'
+                              ? 'bg-green-500/20 text-green-500'
+                              : 'bg-gray-500/20 text-gray-500'
+                          }`}
+                        >
+                          {report.status}
+                        </span>
+                      </div>
+                      <p className="text-sm text-text-muted mb-1">
+                        Artist: {report.Song?.artist || 'Unknown Artist'}
+                      </p>
+                      <p className="text-xs text-text-muted mb-2">
+                        YouTube ID: {report.youtubeId || 'N/A'}
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        Reported: {new Date(report.createdAt).toLocaleString()}
+                        {report.Reporter 
+                          ? ` by ${report.Reporter.username || report.Reporter.email || 'user'}`
+                          : report.reporterName 
+                          ? ` by ${report.reporterName}${report.reporterEmail ? ` (${report.reporterEmail})` : ''}`
+                          : ' anonymously'}
+                      </p>
+                      {report.resolvedAt && (
+                        <>
+                          <p className="text-xs text-text-muted">
+                            Resolved: {new Date(report.resolvedAt).toLocaleString()}
+                            {report.Resolver && ` by ${report.Resolver.username || report.Resolver.email || 'admin'}`}
+                          </p>
+                          {report.newYoutubeId && (
+                            <p className="text-xs text-green-500 font-medium">
+                              Changed to: {report.newYoutubeId}
+                            </p>
+                          )}
+                          {!report.newYoutubeId && (
+                            <p className="text-xs text-yellow-500">
+                              Video ID removed (not replaced)
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {report.status === 'pending' && (
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => handleRemoveAndAddNew(report)}
+                          disabled={processing}
+                          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:opacity-50 text-sm"
+                        >
+                          Remove & Add New
+                        </button>
+                        <button
+                          onClick={() => {
+                            setConfirmModal({
+                              message: `Remove YouTube ID from "${report.Song?.title}"? (You can search for a new video later)`,
+                              onConfirm: () => {
+                                handleResolveReport(report.id, false);
+                                setConfirmModal(null);
+                              },
+                              onCancel: () => setConfirmModal(null),
+                              confirmText: 'Remove Only',
+                              cancelText: 'Cancel',
+                              type: 'warning',
+                            });
+                          }}
+                          disabled={processing}
+                          className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition disabled:opacity-50 text-sm"
+                        >
+                          Remove Only
+                        </button>
+                        <button
+                          onClick={() => {
+                            setConfirmModal({
+                              message: `Dismiss report for "${report.Song?.title}"? (No action will be taken)`,
+                              onConfirm: () => {
+                                handleDismissReport(report.id);
+                                setConfirmModal(null);
+                              },
+                              onCancel: () => setConfirmModal(null),
+                              confirmText: 'Dismiss',
+                              cancelText: 'Cancel',
+                              type: 'info',
+                            });
+                          }}
+                          disabled={processing}
+                          className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition disabled:opacity-50 text-sm"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {confirmModal && (
@@ -345,6 +583,110 @@ function Admin() {
           type={confirmModal.type}
         />
       )}
+
+      {youtubeIdInputModal && (
+        <YoutubeIdInputModal
+          report={youtubeIdInputModal.report}
+          onConfirm={youtubeIdInputModal.onConfirm}
+          onCancel={youtubeIdInputModal.onCancel}
+        />
+      )}
+    </div>
+  );
+}
+
+// YouTube ID Input Modal Component
+function YoutubeIdInputModal({ report, onConfirm, onCancel }) {
+  const [youtubeId, setYoutubeId] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError('');
+    
+    const cleanId = youtubeId.trim();
+    
+    if (!cleanId) {
+      setError('YouTube ID is required');
+      return;
+    }
+    
+    if (cleanId.length !== 11) {
+      setError('YouTube video ID must be exactly 11 characters');
+      return;
+    }
+    
+    onConfirm(cleanId);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-bg-card rounded-lg border border-border p-6 max-w-md w-full">
+        <h2 className="text-xl font-bold text-text-primary mb-4">
+          Enter YouTube Video ID
+        </h2>
+        <p className="text-sm text-text-muted mb-4">
+          For: <strong className="text-text-primary">{report.Song?.title}</strong>
+        </p>
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2 text-text-primary">
+              YouTube Video ID
+            </label>
+            <input
+              type="text"
+              value={youtubeId}
+              onChange={(e) => {
+                setYoutubeId(e.target.value);
+                setError('');
+              }}
+              placeholder="dQw4w9WgXcQ"
+              className="w-full px-4 py-2 bg-bg-hover border border-border rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+              maxLength={11}
+              autoFocus
+            />
+            <p className="text-xs text-text-muted mt-1">
+              Enter just the 11-character ID (e.g., from youtube.com/watch?v=ID)
+            </p>
+            {error && (
+              <p className="text-xs text-red-500 mt-1">{error}</p>
+            )}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 bg-bg-hover border border-border text-text-primary rounded-lg hover:bg-bg-primary transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                console.log('[YOUTUBE ID MODAL] Continue button clicked');
+                const cleanId = youtubeId.trim();
+                console.log('[YOUTUBE ID MODAL] Cleaned ID:', cleanId, 'Length:', cleanId.length);
+                
+                if (!cleanId) {
+                  setError('YouTube ID is required');
+                  return;
+                }
+                
+                if (cleanId.length !== 11) {
+                  setError('YouTube video ID must be exactly 11 characters');
+                  return;
+                }
+                
+                console.log('[YOUTUBE ID MODAL] Calling onConfirm with:', cleanId);
+                onConfirm(cleanId);
+              }}
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition"
+            >
+              Continue
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

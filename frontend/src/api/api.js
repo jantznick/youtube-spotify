@@ -90,6 +90,14 @@ export const songsAPI = {
       method: 'PUT',
       body: JSON.stringify(songData),
     }),
+  findYoutube: (id) =>
+    request(`/songs/${id}/find-youtube`, {
+      method: 'POST',
+    }),
+  reportMismatch: (id) =>
+    request(`/songs/${id}/report-mismatch`, {
+      method: 'POST',
+    }),
 };
 
 export const playlistsAPI = {
@@ -177,6 +185,16 @@ export const adminAPI = {
     request('/admin/feed/populate', {
       method: 'POST',
       body: JSON.stringify(config),
+    }),
+  getVideoReports: () => request('/admin/video-reports'),
+  resolveVideoReport: (id, newYoutubeId = null, resolutionNote = null) =>
+    request(`/admin/video-reports/${id}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ newYoutubeId, resolutionNote }),
+    }),
+  dismissVideoReport: (id) =>
+    request(`/admin/video-reports/${id}/dismiss`, {
+      method: 'POST',
     }),
 };
 

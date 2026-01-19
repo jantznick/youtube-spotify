@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { searchAPI, playlistsAPI } from '../api/api';
-import usePlayerStore from '../store/playerStore';
+import { searchAPI, playlistsAPI, songsAPI } from '../api/api';
+import usePlayerStore, { playerStore } from '../store/playerStore';
 import useAuthStore from '../store/authStore';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
@@ -10,7 +10,7 @@ import { authAPI } from '../api/api';
 export default function Artist() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { addToQueue } = usePlayerStore();
+  const { addToQueue, setYoutubeSearchState } = usePlayerStore();
   const { user, isAuthenticated } = useAuthStore();
   const [artist, setArtist] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -75,8 +75,81 @@ export default function Artist() {
     }
   };
 
-  const handlePlaySong = (song) => {
-    // Placeholder - will be implemented later
+  const handlePlaySong = async (song) => {
+    // Ensure song has artist name from the current artist page context
+    const songWithArtist = {
+      ...song,
+      artist: song.artist || artist?.name || 'Unknown Artist',
+    };
+    
+    // Play immediately (even without youtubeId)
+    const state = playerStore.getState();
+    let newQueue = [...state.queue];
+    if (state.currentSong) {
+      newQueue = newQueue.filter(s => s.id !== state.currentSong.id);
+      newQueue = [state.currentSong, ...newQueue];
+    }
+    
+    // Set song as current and start playing if it has youtubeId, otherwise it will show "searching" message
+    playerStore.setState({
+      queue: [songWithArtist, ...newQueue],
+      currentSong: songWithArtist,
+      isPlaying: !!songWithArtist.youtubeId, // Only autoplay if already has youtubeId
+      currentIndex: 0,
+    });
+    
+    // If song doesn't have youtubeId, search in background and update when found
+    if (!songWithArtist.youtubeId) {
+      // Set searching state
+      setYoutubeSearchState(true, false);
+      
+      songsAPI.findYoutube(song.id)
+        .then((result) => {
+          if (result.song && result.song.youtubeId) {
+            // Ensure artist name is preserved from page context
+            const updatedSong = {
+              ...result.song,
+              artist: result.song.artist || artist?.name || 'Unknown Artist',
+            };
+            
+            // Update the song in the artist state
+            setArtist((prevArtist) => {
+              if (!prevArtist) return prevArtist;
+              const updatedReleases = prevArtist.releases.map((release) => ({
+                ...release,
+                songs: release.songs.map((s) => (s.id === song.id ? updatedSong : s)),
+              }));
+              return { ...prevArtist, releases: updatedReleases };
+            });
+            
+            // Update the current song in player if it's still the same song
+            const currentState = playerStore.getState();
+            if (currentState.currentSong?.id === song.id) {
+              playerStore.setState({
+                currentSong: updatedSong,
+                isPlaying: true, // Now start playing since we have youtubeId
+              });
+            }
+            
+            // Update the queue if this song is in it
+            const updatedQueue = currentState.queue.map((s) => 
+              s.id === song.id ? updatedSong : s
+            );
+            playerStore.setState({ queue: updatedQueue });
+            
+            // Clear searching state (found successfully)
+            setYoutubeSearchState(false, false);
+          } else {
+            // Search completed but no video found
+            setYoutubeSearchState(false, true);
+          }
+        })
+        .catch((error) => {
+          console.error('Error finding YouTube video:', error);
+          // Search failed
+          setYoutubeSearchState(false, true);
+        });
+    }
   };
 
   const toggleRelease = (releaseId) => {
@@ -90,7 +163,75 @@ export default function Artist() {
   };
 
   const handleAddToQueue = (song) => {
-    addToQueue(song);
+    // Ensure song has artist name from the current artist page context
+    const songWithArtist = {
+      ...song,
+      artist: song.artist || artist?.name || 'Unknown Artist',
+    };
+    
+    // Add to queue immediately
+    addToQueue(songWithArtist);
+    
+    // If song doesn't have youtubeId, search in background and update when found
+    if (!songWithArtist.youtubeId) {
+      // Set searching state (only if this song is currently playing)
+      const currentState = playerStore.getState();
+      if (currentState.currentSong?.id === song.id) {
+        setYoutubeSearchState(true, false);
+      }
+      
+      songsAPI.findYoutube(song.id)
+        .then((result) => {
+          if (result.song && result.song.youtubeId) {
+            // Ensure artist name is preserved from page context
+            const updatedSong = {
+              ...result.song,
+              artist: result.song.artist || artist?.name || 'Unknown Artist',
+            };
+            
+            // Update the song in the artist state
+            setArtist((prevArtist) => {
+              if (!prevArtist) return prevArtist;
+              const updatedReleases = prevArtist.releases.map((release) => ({
+                ...release,
+                songs: release.songs.map((s) => (s.id === song.id ? updatedSong : s)),
+              }));
+              return { ...prevArtist, releases: updatedReleases };
+            });
+            
+            // Update the queue if this song is in it
+            const updatedState = playerStore.getState();
+            const updatedQueue = updatedState.queue.map((s) => 
+              s.id === song.id ? updatedSong : s
+            );
+            playerStore.setState({ queue: updatedQueue });
+            
+            // If this song is currently playing, update it and start playing
+            if (updatedState.currentSong?.id === song.id) {
+              playerStore.setState({
+                currentSong: updatedSong,
+                isPlaying: true, // Now start playing since we have youtubeId
+              });
+              // Clear searching state (found successfully)
+              setYoutubeSearchState(false, false);
+            }
+          } else {
+            // Search completed but no video found
+            const updatedState = playerStore.getState();
+            if (updatedState.currentSong?.id === song.id) {
+              setYoutubeSearchState(false, true);
+            }
+          }
+        })
+        .catch((error) => {
+          console.error('Error finding YouTube video:', error);
+          // Search failed
+          const updatedState = playerStore.getState();
+          if (updatedState.currentSong?.id === song.id) {
+            setYoutubeSearchState(false, true);
+          }
+        });
+    }
   };
 
   if (loading) {
@@ -185,11 +326,20 @@ export default function Artist() {
                                 className="flex items-center justify-between p-3 rounded-lg hover:bg-bg-hover transition-all duration-200 group/item"
                               >
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-text-primary group-hover/item:text-accent transition-colors">
+                                  <div className="text-text-primary group-hover/item:text-accent transition-colors flex items-center gap-2">
                                     {song.discogsTrackPosition && (
-                                      <span className="text-text-muted mr-2 font-mono text-xs">{song.discogsTrackPosition}</span>
+                                      <span className="text-text-muted font-mono text-xs">{song.discogsTrackPosition}</span>
                                     )}
-                                    {song.title}
+                                    <span className="flex-1 truncate">{song.title}</span>
+                                    {song.youtubeId ? (
+                                      <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20" title="YouTube video available">
+                                        <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="w-4 h-4 text-yellow-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Searching for YouTube video...">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                      </svg>
+                                    )}
                                   </div>
                                   {song.duration && (
                                     <div className="text-text-muted text-sm mt-1">
@@ -197,12 +347,20 @@ export default function Artist() {
                                     </div>
                                   )}
                                 </div>
-                                <button
-                                  onClick={() => handleAddToQueue(song)}
-                                  className="px-4 py-2 text-sm bg-accent text-white rounded-lg hover:bg-accent-hover transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105 ml-4"
-                                >
-                                  Add to Queue
-                                </button>
+                                <div className="flex items-center gap-2 ml-4">
+                                  <button
+                                    onClick={() => handlePlaySong(song)}
+                                    className="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105"
+                                  >
+                                    Play
+                                  </button>
+                                  <button
+                                    onClick={() => handleAddToQueue(song)}
+                                    className="px-4 py-2 text-sm bg-accent text-white rounded-lg hover:bg-accent-hover transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105"
+                                  >
+                                    Add to Queue
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -285,11 +443,20 @@ export default function Artist() {
                               className="flex items-center justify-between p-3 rounded-lg hover:bg-bg-hover transition-all duration-200 group/item"
                             >
                               <div className="flex-1 min-w-0">
-                                <div className="text-text-primary group-hover/item:text-accent transition-colors">
+                                <div className="text-text-primary group-hover/item:text-accent transition-colors flex items-center gap-2">
                                   {song.discogsTrackPosition && (
-                                    <span className="text-text-muted mr-2 font-mono text-xs">{song.discogsTrackPosition}</span>
+                                    <span className="text-text-muted font-mono text-xs">{song.discogsTrackPosition}</span>
                                   )}
-                                  {song.title}
+                                  <span className="flex-1 truncate">{song.title}</span>
+                                  {song.youtubeId ? (
+                                    <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20" title="YouTube video available">
+                                      <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-4 h-4 text-yellow-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Searching for YouTube video...">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                  )}
                                 </div>
                                 {song.duration && (
                                   <div className="text-text-muted text-sm mt-1">
@@ -297,12 +464,20 @@ export default function Artist() {
                                   </div>
                                 )}
                               </div>
-                              <button
-                                onClick={() => handleAddToQueue(song)}
-                                className="px-4 py-2 text-sm bg-accent text-white rounded-lg hover:bg-accent-hover transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105 ml-4"
-                              >
-                                Add to Queue
-                              </button>
+                              <div className="flex items-center gap-2 ml-4">
+                                <button
+                                  onClick={() => handlePlaySong(song)}
+                                  className="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105"
+                                >
+                                  Play
+                                </button>
+                                <button
+                                  onClick={() => handleAddToQueue(song)}
+                                  className="px-4 py-2 text-sm bg-accent text-white rounded-lg hover:bg-accent-hover transition-all duration-200 font-medium shadow-md hover:shadow-lg transform hover:scale-105"
+                                >
+                                  Add to Queue
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>

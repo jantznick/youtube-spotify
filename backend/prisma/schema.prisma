@@ -145,7 +145,7 @@ model Song {
   id                   String         @id @default(uuid())
   title                String
   artist               String?
-  youtubeId            String?        @unique
+  youtubeId            String?
   thumbnailUrl         String?
   duration             Int?
   createdAt            DateTime       @default(now())
@@ -164,11 +164,35 @@ model Song {
   discogsTrackPosition String?
   PlaylistSong         PlaylistSong[]
   DiscogsRelease       DiscogsRelease? @relation(fields: [releaseId], references: [id])
+  VideoReport          VideoReport[]
 
   @@index([artist])
   @@index([releaseId])
   @@index([title])
   @@index([youtubeId])
+}
+
+model VideoReport {
+  id              String   @id @default(uuid())
+  songId          String
+  youtubeId       String?  // The reported (incorrect) YouTube ID
+  newYoutubeId   String?  // The new YouTube ID if replaced
+  reportedBy      String?  // userId if authenticated, null if anonymous
+  reporterEmail   String?  // Email if reported anonymously
+  reporterName    String?  // Name if reported anonymously
+  status          String   @default("pending") // pending, resolved, dismissed
+  resolvedBy      String?  // userId of admin who resolved it
+  resolvedAt      DateTime?
+  resolutionNote String?  // Optional note about the resolution
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  Song            Song     @relation(fields: [songId], references: [id], onDelete: Cascade)
+  Reporter        User?    @relation("ReportedReports", fields: [reportedBy], references: [id], onDelete: SetNull)
+  Resolver        User?    @relation("ResolvedReports", fields: [resolvedBy], references: [id], onDelete: SetNull)
+
+  @@index([songId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model User {
@@ -181,6 +205,8 @@ model User {
   MagicToken         MagicToken[]
   PasswordResetToken PasswordResetToken[]
   Playlist           Playlist[]
+  ReportedReports    VideoReport[]        @relation("ReportedReports")
+  ResolvedReports     VideoReport[]        @relation("ResolvedReports")
 }
 
 model session {

@@ -18,6 +18,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import YouTube from 'react-youtube';
 import usePlayerStore, { playerStore } from '../store/playerStore';
+import { songsAPI } from '../api/api';
+import ConfirmModal from './ConfirmModal';
 
 // Sortable Queue Item Component for Player
 function SortableQueueItem({ song, actualIndex, onRemove, onPlayNext }) {
@@ -112,10 +114,13 @@ function Player() {
     removeFromQueue,
     reorderQueue,
     playNext,
+    isSearchingYoutube,
+    youtubeSearchFailed,
   } = usePlayerStore();
   const playerRef = useRef(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showToast, setShowToast] = useState(true);
+  const [confirmModal, setConfirmModal] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -243,6 +248,19 @@ function Player() {
     }
   };
 
+  const handleReportMismatch = async () => {
+    if (!currentSong?.id) return;
+    
+    try {
+      const result = await songsAPI.reportMismatch(currentSong.id);
+      // Show success message (could use a toast notification here)
+      console.log(result.message || 'Video mismatch reported successfully');
+    } catch (error) {
+      console.error('Error reporting mismatch:', error);
+      // Could show error toast here
+    }
+  };
+
   // Show toast and autoplay when song changes
   useEffect(() => {
     if (currentSong) {
@@ -298,7 +316,9 @@ function Player() {
         {!isMinimized && (
           <div className="flex items-start justify-between mb-3 gap-2">
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-text-primary truncate text-sm sm:text-base">{currentSong.title}</div>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <div className="font-semibold text-text-primary truncate text-sm sm:text-base flex-1 min-w-0">{currentSong.title}</div>
+              </div>
               {currentSong.artistIds && Array.isArray(currentSong.artistIds) && currentSong.artistIds.length > 0 ? (
                 <div className="text-xs sm:text-sm text-text-muted truncate">
                   {currentSong.artistIds.length === 1 ? (
@@ -326,6 +346,29 @@ function Player() {
               )}
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
+            {hasYouTubeId && (
+                  <button
+                    onClick={() => {
+                      setConfirmModal({
+                        message: `Report that this video doesn't match "${currentSong.title}"? This will notify administrators to review and fix it.`,
+                        onConfirm: () => {
+                          handleReportMismatch();
+                          setConfirmModal(null);
+                        },
+                        onCancel: () => setConfirmModal(null),
+                        confirmText: 'Report',
+                        cancelText: 'Cancel',
+                        type: 'warning',
+                      });
+                    }}
+                    className="p-1.5 text-text-muted hover:text-red-500 transition-colors flex-shrink-0"
+                    title="Report video doesn't match song"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </button>
+                )}
               <button
                 onClick={() => setIsMinimized(true)}
                 className="text-text-muted hover:text-text-primary transition-colors"
@@ -377,10 +420,28 @@ function Player() {
                   className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-lg mb-4 opacity-50"
                 />
               )}
-              <div className="text-text-primary font-medium mb-2">Coming Soon</div>
-              <div className="text-text-muted text-sm">
-                This song is not available yet. Navigate to the next song to continue.
-              </div>
+              {isSearchingYoutube ? (
+                <>
+                  <div className="text-text-primary font-medium mb-2">Searching for this song...</div>
+                  <div className="text-text-muted text-sm">
+                    We're searching for this song. If we can't find it, we'll update you within ~5-6 seconds.
+                  </div>
+                </>
+              ) : youtubeSearchFailed ? (
+                <>
+                  <div className="text-text-primary font-medium mb-2">Song Not Found</div>
+                  <div className="text-text-muted text-sm">
+                    We couldn't find this song. Please select another song to continue.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-text-primary font-medium mb-2">Coming Soon</div>
+                  <div className="text-text-muted text-sm">
+                    This song is not available yet. Navigate to the next song to continue.
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -600,6 +661,16 @@ function Player() {
           </>
         )}
       </div>
+      {confirmModal && (
+        <ConfirmModal
+          message={confirmModal.message}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={confirmModal.onCancel}
+          confirmText={confirmModal.confirmText}
+          cancelText={confirmModal.cancelText}
+          type={confirmModal.type}
+        />
+      )}
     </div>
   );
 }

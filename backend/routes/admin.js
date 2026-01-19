@@ -1,6 +1,7 @@
 import express from 'express';
 import { prisma } from '../server.js';
 import { processPlaylistUrl } from '../scripts/populate-homepage-feed.js';
+import { sendVideoReportResolvedEmail } from '../services/emailService.js';
 
 const router = express.Router();
 
@@ -252,6 +253,190 @@ router.post('/feed/populate', async (req, res) => {
   } catch (error) {
     console.error('Populate feed error:', error);
     res.status(500).json({ error: 'Failed to start feed population' });
+  }
+});
+
+// Get all video reports
+router.get('/video-reports', async (req, res) => {
+  try {
+    const reports = await prisma.videoReport.findMany({
+      select: {
+        id: true,
+        songId: true,
+        youtubeId: true, // The reported (incorrect) YouTube ID
+        newYoutubeId: true, // The new YouTube ID if replaced
+        reportedBy: true,
+        reporterEmail: true,
+        reporterName: true,
+        status: true,
+        resolvedBy: true,
+        resolvedAt: true,
+        resolutionNote: true,
+        createdAt: true,
+        updatedAt: true,
+        Song: {
+          select: {
+            id: true,
+            title: true,
+            artist: true,
+            youtubeId: true, // Current youtubeId in the song (may have changed)
+            thumbnailUrl: true,
+          },
+        },
+        Reporter: {
+          select: {
+            email: true,
+            username: true,
+          },
+        },
+        Resolver: {
+          select: {
+            email: true,
+            username: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+    
+    res.json({ reports });
+  } catch (error) {
+    console.error('[ADMIN] Get video reports error:', error);
+    res.status(500).json({ error: 'Failed to get video reports' });
+  }
+});
+
+// Resolve a video report (remove youtubeId and optionally set new one)
+router.post('/video-reports/:id/resolve', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newYoutubeId, resolutionNote } = req.body;
+    const adminUserId = req.session?.userId;
+    
+    if (!adminUserId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    // Get the report
+    const report = await prisma.videoReport.findUnique({
+      where: { id },
+      include: {
+        Song: true,
+      },
+    });
+    
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    
+    if (report.status !== 'pending') {
+      return res.status(400).json({ error: 'Report is not pending' });
+    }
+    
+    // Get user email if report was made by a logged-in user
+    let userEmail = null;
+    let username = null;
+    if (report.reportedBy) {
+      const user = await prisma.user.findUnique({
+        where: { id: report.reportedBy },
+        select: { email: true, username: true },
+      });
+      if (user) {
+        userEmail = user.email;
+        username = user.username;
+      }
+    } else if (report.reporterEmail) {
+      // Anonymous reporter provided email
+      userEmail = report.reporterEmail;
+      username = report.reporterName || null;
+    }
+    
+    // Update the song - remove old youtubeId, set new one if provided
+    const updateData = {
+      youtubeId: newYoutubeId || null,
+      thumbnailUrl: newYoutubeId ? `https://i.ytimg.com/vi/${newYoutubeId}/hqdefault.jpg` : null,
+    };
+    
+    await prisma.song.update({
+      where: { id: report.songId },
+      data: updateData,
+    });
+    
+    // Update the report status
+    const updatedReport = await prisma.videoReport.update({
+      where: { id },
+      data: {
+        status: 'resolved',
+        resolvedBy: adminUserId,
+        resolvedAt: new Date(),
+        newYoutubeId: newYoutubeId || null,
+        resolutionNote: resolutionNote || null,
+      },
+    });
+    
+    console.log(`[ADMIN] Video report ${id} resolved. ${newYoutubeId ? `Replaced youtubeId with ${newYoutubeId}` : 'Removed youtubeId'} from song "${report.Song.title}"`);
+    
+    // Send email notification if user has an email and a new YouTube ID was set
+    if (userEmail && newYoutubeId) {
+      try {
+        await sendVideoReportResolvedEmail(
+          userEmail,
+          username,
+          report.Song.title,
+          report.Song.artist,
+          report.youtubeId,
+          newYoutubeId
+        );
+        console.log(`[ADMIN] Email notification sent to ${userEmail} for resolved report ${id}`);
+      } catch (emailError) {
+        console.error(`[ADMIN] Failed to send email notification for report ${id}:`, emailError);
+        // Don't fail the request if email fails
+      }
+    }
+    
+    res.json({ 
+      message: newYoutubeId ? 'Report resolved and new video ID set' : 'Report resolved and video ID removed',
+      report: updatedReport,
+    });
+  } catch (error) {
+    console.error('[ADMIN] Resolve video report error:', error);
+    res.status(500).json({ error: 'Failed to resolve video report', details: error.message });
+  }
+});
+
+// Dismiss a video report (mark as dismissed without action)
+router.post('/video-reports/:id/dismiss', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminUserId = req.session?.userId;
+    
+    if (!adminUserId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const report = await prisma.videoReport.findUnique({
+      where: { id },
+    });
+    
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    
+    await prisma.videoReport.update({
+      where: { id },
+      data: {
+        status: 'dismissed',
+        resolvedBy: adminUserId,
+        resolvedAt: new Date(),
+      },
+    });
+    
+    res.json({ message: 'Report dismissed successfully' });
+  } catch (error) {
+    console.error('[ADMIN] Dismiss video report error:', error);
+    res.status(500).json({ error: 'Failed to dismiss video report', details: error.message });
   }
 });
 
