@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import usePlayerStore, { playerStore } from '../store/playerStore';
-import { authAPI, feedAPI, playlistsAPI } from '../api/api';
+import { authAPI, feedAPI, playlistsAPI, songsAPI } from '../api/api';
 import Sidebar from '../components/Sidebar';
 import SongList from '../components/SongList';
 import NotificationModal from '../components/NotificationModal';
@@ -16,7 +16,7 @@ function Home() {
   const [notification, setNotification] = useState(null);
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
-  const { setCurrentSong, setQueue, queue, addToQueue, currentSong } = usePlayerStore();
+  const { setCurrentSong, setQueue, queue, addToQueue, currentSong, setYoutubeSearchState } = usePlayerStore();
 
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type });
@@ -54,7 +54,7 @@ function Home() {
   };
 
 
-  const handlePlaySong = (song) => {
+  const handlePlaySong = async (song) => {
     const state = playerStore.getState();
     
     // Take currently playing song and put it at start of queue
@@ -66,13 +66,52 @@ function Home() {
       newQueue = [state.currentSong, ...newQueue];
     }
     
-    // Play the new song
+    // Play immediately (even without youtubeId)
     playerStore.setState({
-      queue: newQueue,
+      queue: [song, ...newQueue],
       currentSong: song,
-      isPlaying: true,
+      isPlaying: !!song.youtubeId, // Only autoplay if already has youtubeId
       currentIndex: 0,
     });
+    
+    // If song doesn't have youtubeId, search in background and update when found
+    if (!song.youtubeId) {
+      // Set searching state
+      setYoutubeSearchState(true, false);
+      
+      songsAPI.findYoutube(song.id)
+        .then((result) => {
+          if (result.song && result.song.youtubeId) {
+            const updatedSong = result.song;
+            
+            // Update the current song in player if it's still the same song
+            const currentState = playerStore.getState();
+            if (currentState.currentSong?.id === song.id) {
+              playerStore.setState({
+                currentSong: updatedSong,
+                isPlaying: true, // Now start playing since we have youtubeId
+              });
+            }
+            
+            // Update the queue if this song is in it
+            const updatedQueue = currentState.queue.map((s) => 
+              s.id === song.id ? updatedSong : s
+            );
+            playerStore.setState({ queue: updatedQueue });
+            
+            // Clear searching state (found successfully)
+            setYoutubeSearchState(false, false);
+          } else {
+            // Search completed but no video found
+            setYoutubeSearchState(false, true);
+          }
+        })
+        .catch((error) => {
+          console.error('Error finding YouTube video:', error);
+          // Search failed
+          setYoutubeSearchState(false, true);
+        });
+    }
   };
 
   const handleCreatePlaylist = async (name, description) => {

@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { searchAPI } from '../api/api.js';
-import usePlayerStore from '../store/playerStore';
+import { searchAPI, songsAPI } from '../api/api.js';
+import usePlayerStore, { playerStore } from '../store/playerStore';
 
 export default function SearchBar() {
   const navigate = useNavigate();
-  const { addToQueue } = usePlayerStore();
+  const { addToQueue, setYoutubeSearchState } = usePlayerStore();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState({ artists: [], songs: [] });
   const [isOpen, setIsOpen] = useState(false);
@@ -68,10 +68,57 @@ export default function SearchBar() {
 
   const handleResultClick = async (type, item) => {
     if (type === 'song') {
-      // Add song to queue
+      // Add song to queue immediately
       addToQueue(item);
       setIsOpen(false);
       setQuery(''); // Clear search after adding
+      
+      // If song doesn't have youtubeId, search in background and update when found
+      if (!item.youtubeId) {
+        // Set searching state (only if this song is currently playing)
+        const currentState = playerStore.getState();
+        if (currentState.currentSong?.id === item.id) {
+          setYoutubeSearchState(true, false);
+        }
+        
+        songsAPI.findYoutube(item.id)
+          .then((result) => {
+            if (result.song && result.song.youtubeId) {
+              const updatedSong = result.song;
+              
+              // Update the queue if this song is in it
+              const updatedState = playerStore.getState();
+              const updatedQueue = updatedState.queue.map((s) => 
+                s.id === item.id ? updatedSong : s
+              );
+              playerStore.setState({ queue: updatedQueue });
+              
+              // If this song is currently playing, update it and start playing
+              if (updatedState.currentSong?.id === item.id) {
+                playerStore.setState({
+                  currentSong: updatedSong,
+                  isPlaying: true, // Now start playing since we have youtubeId
+                });
+                // Clear searching state (found successfully)
+                setYoutubeSearchState(false, false);
+              }
+            } else {
+              // Search completed but no video found
+              const updatedState = playerStore.getState();
+              if (updatedState.currentSong?.id === item.id) {
+                setYoutubeSearchState(false, true);
+              }
+            }
+          })
+          .catch((error) => {
+            console.error('Error finding YouTube video:', error);
+            // Search failed
+            const updatedState = playerStore.getState();
+            if (updatedState.currentSong?.id === item.id) {
+              setYoutubeSearchState(false, true);
+            }
+          });
+      }
     } else {
       // Navigate to artist page
       navigate(`/artist/${item.id}`);

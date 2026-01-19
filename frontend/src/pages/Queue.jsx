@@ -16,9 +16,9 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import usePlayerStore from '../store/playerStore';
+import usePlayerStore, { playerStore } from '../store/playerStore';
 import useAuthStore from '../store/authStore';
-import { playlistsAPI } from '../api/api';
+import { playlistsAPI, songsAPI } from '../api/api';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 import NotificationModal from '../components/NotificationModal';
@@ -132,6 +132,7 @@ function Queue() {
     setCurrentSong, 
     currentPlaylist,
     playNext,
+    setYoutubeSearchState,
     reorderQueue,
   } = usePlayerStore();
   const { user, isAuthenticated } = useAuthStore();
@@ -168,7 +169,7 @@ function Queue() {
     setNotification({ message, type });
   };
 
-  const handlePlaySong = (song, index) => {
+  const handlePlaySong = async (song, index) => {
     // When playing a song from the queue:
     // 1. Play the selected song immediately
     // 2. Move the currently playing song to be next (right after the selected song)
@@ -194,12 +195,64 @@ function Queue() {
       // Insert current playing song right after selected song (at position 1)
       newQueue.splice(1, 0, currentPlayingSong);
       
-      // Update queue and play the selected song at index 0
+      // Update queue and play the selected song at index 0 (even without youtubeId)
       reorderQueue(newQueue);
-      setCurrentSong(selectedSong, currentPlaylist, 0, true);
+      setCurrentSong(selectedSong, currentPlaylist, 0, !!selectedSong.youtubeId);
+      
+      // If song doesn't have youtubeId, search in background
+      if (!selectedSong.youtubeId) {
+        setYoutubeSearchState(true, false);
+        songsAPI.findYoutube(selectedSong.id)
+          .then((result) => {
+            if (result.song && result.song.youtubeId) {
+              const updatedSong = result.song;
+              const currentState = playerStore.getState();
+              if (currentState.currentSong?.id === selectedSong.id) {
+                setCurrentSong(updatedSong, currentPlaylist, 0, true);
+              }
+              const updatedQueue = currentState.queue.map((s) => 
+                s.id === selectedSong.id ? updatedSong : s
+              );
+              playerStore.setState({ queue: updatedQueue });
+              setYoutubeSearchState(false, false);
+            } else {
+              setYoutubeSearchState(false, true);
+            }
+          })
+          .catch((error) => {
+            console.error('Error finding YouTube video:', error);
+            setYoutubeSearchState(false, true);
+          });
+      }
     } else {
-      // No current song or clicking on current song, just play the selected one
-      setCurrentSong(song, currentPlaylist, index, true);
+      // No current song or clicking on current song, just play the selected one (even without youtubeId)
+      setCurrentSong(song, currentPlaylist, index, !!song.youtubeId);
+      
+      // If song doesn't have youtubeId, search in background
+      if (!song.youtubeId) {
+        setYoutubeSearchState(true, false);
+        songsAPI.findYoutube(song.id)
+          .then((result) => {
+            if (result.song && result.song.youtubeId) {
+              const updatedSong = result.song;
+              const currentState = playerStore.getState();
+              if (currentState.currentSong?.id === song.id) {
+                setCurrentSong(updatedSong, currentPlaylist, index, true);
+              }
+              const updatedQueue = currentState.queue.map((s) => 
+                s.id === song.id ? updatedSong : s
+              );
+              playerStore.setState({ queue: updatedQueue });
+              setYoutubeSearchState(false, false);
+            } else {
+              setYoutubeSearchState(false, true);
+            }
+          })
+          .catch((error) => {
+            console.error('Error finding YouTube video:', error);
+            setYoutubeSearchState(false, true);
+          });
+      }
     }
   };
 

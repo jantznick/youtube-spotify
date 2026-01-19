@@ -18,7 +18,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { playlistsAPI, songsAPI } from '../api/api';
-import usePlayerStore from '../store/playerStore';
+import usePlayerStore, { playerStore } from '../store/playerStore';
 import useAuthStore from '../store/authStore';
 import Sidebar from '../components/Sidebar';
 import AddSongModal from '../components/AddSongModal';
@@ -154,7 +154,7 @@ function Playlist() {
   const [pollingCount, setPollingCount] = useState(0);
   const [socketConnected, setSocketConnected] = useState(false);
   const socketRef = useRef(null);
-  const { currentSong, setCurrentSong, setQueue, currentPlaylist, isPlaying, togglePlay, playNext, addToQueue } = usePlayerStore();
+  const { currentSong, setCurrentSong, setQueue, currentPlaylist, isPlaying, togglePlay, playNext, addToQueue, setYoutubeSearchState } = usePlayerStore();
   
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -482,10 +482,51 @@ function Playlist() {
     }
   };
 
-  const handlePlaySong = (song, index) => {
+  const handlePlaySong = async (song, index) => {
     const playlistSongs = playlist.playlistSongs.map((ps) => ps.song);
     setQueue(playlistSongs);
+    
+    // Play immediately (even without youtubeId)
     setCurrentSong(song, playlist, index);
+    
+    // If song doesn't have youtubeId, search in background and update when found
+    if (!song.youtubeId) {
+      // Set searching state
+      setYoutubeSearchState(true, false);
+      
+      songsAPI.findYoutube(song.id)
+        .then((result) => {
+          if (result.song && result.song.youtubeId) {
+            const updatedSong = result.song;
+            
+            // Update the current song in player if it's still the same song
+            const currentState = playerStore.getState();
+            if (currentState.currentSong?.id === song.id) {
+              setCurrentSong(updatedSong, playlist, index);
+              playerStore.setState({
+                isPlaying: true, // Now start playing since we have youtubeId
+              });
+            }
+            
+            // Update the queue if this song is in it
+            const updatedQueue = currentState.queue.map((s) => 
+              s.id === song.id ? updatedSong : s
+            );
+            playerStore.setState({ queue: updatedQueue });
+            
+            // Clear searching state (found successfully)
+            setYoutubeSearchState(false, false);
+          } else {
+            // Search completed but no video found
+            setYoutubeSearchState(false, true);
+          }
+        })
+        .catch((error) => {
+          console.error('Error finding YouTube video:', error);
+          // Search failed
+          setYoutubeSearchState(false, true);
+        });
+    }
   };
 
   const handlePlayPlaylist = () => {
@@ -883,7 +924,49 @@ function Playlist() {
                         onPlay={handlePlaySong}
                         onRemove={handleRemoveSong}
                         onPlayNext={handlePlayNext}
-                        onAddToQueue={addToQueue}
+                        onAddToQueue={(song) => {
+                          addToQueue(song);
+                          // If song doesn't have youtubeId, search in background
+                          if (!song.youtubeId) {
+                            const currentState = playerStore.getState();
+                            // Only set searching state if this song is currently playing
+                            if (currentState.currentSong?.id === song.id) {
+                              setYoutubeSearchState(true, false);
+                            }
+                            songsAPI.findYoutube(song.id)
+                              .then((result) => {
+                                if (result.song && result.song.youtubeId) {
+                                  const updatedSong = result.song;
+                                  const updatedState = playerStore.getState();
+                                  // Update the queue if this song is in it
+                                  const updatedQueue = updatedState.queue.map((s) => 
+                                    s.id === song.id ? updatedSong : s
+                                  );
+                                  playerStore.setState({ queue: updatedQueue });
+                                  // If this song is currently playing, update it and start playing
+                                  if (updatedState.currentSong?.id === song.id) {
+                                    playerStore.setState({
+                                      currentSong: updatedSong,
+                                      isPlaying: true,
+                                    });
+                                    setYoutubeSearchState(false, false);
+                                  }
+                                } else {
+                                  const updatedState = playerStore.getState();
+                                  if (updatedState.currentSong?.id === song.id) {
+                                    setYoutubeSearchState(false, true);
+                                  }
+                                }
+                              })
+                              .catch((error) => {
+                                console.error('Error finding YouTube video:', error);
+                                const updatedState = playerStore.getState();
+                                if (updatedState.currentSong?.id === song.id) {
+                                  setYoutubeSearchState(false, true);
+                                }
+                              });
+                          }
+                        }}
                         setConfirmModal={setConfirmModal}
                         isSortable={isSortable}
                       />
