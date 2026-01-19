@@ -78,7 +78,7 @@ router.get('/homepage', async (req, res) => {
 // Get stats (public endpoint)
 router.get('/stats', async (req, res) => {
   try {
-    const [artistCount, songCount] = await Promise.all([
+    const [artistCount, songsCount,allSongsCount] = await Promise.all([
       prisma.discogsArtist.count(),
       prisma.song.count({
         where: {
@@ -87,11 +87,13 @@ router.get('/stats', async (req, res) => {
           },
         },
       }),
+      prisma.song.count(),
     ]);
 
     res.json({
       artistCount,
-      songCount,
+      songsCount,
+      allSongsCount,
     });
   } catch (error) {
     console.error('Get stats error:', error);

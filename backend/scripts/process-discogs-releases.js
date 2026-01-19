@@ -13,6 +13,84 @@ const prisma = new PrismaClient();
 // Check for debug mode
 const isDebugMode = process.argv.includes('--debug');
 
+// In-memory artist cache (limited size to prevent memory issues)
+const artistCache = new Map();
+const MAX_CACHE_SIZE = 10000; // Limit cache to 10k entries
+
+// Helper function to get or create artists in batch (blocking/sequential)
+async function getOrCreateArtistsBatch(artistNames) {
+  if (!artistNames || artistNames.length === 0) return new Map();
+  
+  // Filter out empty names and get unique set
+  const uniqueNames = [...new Set(artistNames.filter(name => name && name.trim()))];
+  if (uniqueNames.length === 0) return new Map();
+  
+  // Check cache first
+  const cached = new Map();
+  const uncached = [];
+  
+  for (const name of uniqueNames) {
+    if (artistCache.has(name)) {
+      cached.set(name, artistCache.get(name));
+    } else {
+      uncached.push(name);
+    }
+  }
+  
+  // Batch lookup uncached artists
+  if (uncached.length > 0) {
+    const existingArtists = await prisma.discogsArtist.findMany({
+      where: { name: { in: uncached } },
+      select: { id: true, name: true },
+    });
+    
+    // Add to cache and result map
+    for (const artist of existingArtists) {
+      cached.set(artist.name, artist.id);
+      // Update cache (with size limit)
+      if (artistCache.size < MAX_CACHE_SIZE) {
+        artistCache.set(artist.name, artist.id);
+      }
+    }
+    
+    // Find which artists need to be created
+    const existingNames = new Set(existingArtists.map(a => a.name));
+    const toCreate = uncached.filter(name => !existingNames.has(name));
+    
+    // Create missing artists one by one (sequential, blocking)
+    for (const name of toCreate) {
+      try {
+        const newArtist = await prisma.discogsArtist.create({
+          data: {
+            name: name,
+            lastUpdated: new Date(),
+          },
+          select: { id: true, name: true },
+        });
+        cached.set(newArtist.name, newArtist.id);
+        // Update cache (with size limit)
+        if (artistCache.size < MAX_CACHE_SIZE) {
+          artistCache.set(newArtist.name, newArtist.id);
+        }
+      } catch (error) {
+        // Race condition - another process might have created it
+        const found = await prisma.discogsArtist.findUnique({
+          where: { name: name },
+          select: { id: true, name: true },
+        });
+        if (found) {
+          cached.set(found.name, found.id);
+          if (artistCache.size < MAX_CACHE_SIZE) {
+            artistCache.set(found.name, found.id);
+          }
+        }
+      }
+    }
+  }
+  
+  return cached;
+}
+
 // Get dump date from command line or find latest
 const getDumpDate = () => {
   const args = process.argv.filter(arg => !arg.startsWith('--'));
@@ -165,7 +243,7 @@ async function processDiscogsReleases() {
         const stats = {
           processed, created, updated, errors, skipped, tracksProcessed, songsUpserted,
           totalProcessingTime, slowestReleaseTime, slowestReleaseTitle, lastSyncUpdate,
-          dumpDate, isDebugMode, startTime
+          dumpDate, isDebugMode, startTime, syncRecord
         };
         await processRelease(releaseBuffer, parser, stats);
         
@@ -199,7 +277,7 @@ async function processDiscogsReleases() {
         const stats = {
           processed, created, updated, errors, skipped, tracksProcessed, songsUpserted,
           totalProcessingTime, slowestReleaseTime, slowestReleaseTitle, lastSyncUpdate,
-          dumpDate, isDebugMode, startTime
+          dumpDate, isDebugMode, startTime, syncRecord
         };
         await processRelease(releaseBuffer, parser, stats);
         
@@ -366,8 +444,41 @@ async function processRelease(releaseXml, parser, stats) {
     });
 
     let releaseUuid;
-    if (existingRelease) {
-      // Use existing release UUID, but still process songs
+    // If release exists and we're processing from a previously processed dump, skip everything
+    // (songs were already processed from this same file, no need to reprocess)
+    if (existingRelease && stats.syncRecord && stats.syncRecord.releasesProcessed > 0) {
+      releaseUuid = existingRelease.id;
+      stats.skipped++;
+      stats.processed++;
+      
+      // Update sync record periodically (same as normal flow)
+      if (stats.processed - stats.lastSyncUpdate >= 1000) {
+        await prisma.discogsDataSync.update({
+          where: { dumpDate: stats.dumpDate },
+          data: {
+            releasesProcessed: stats.processed,
+            tracksProcessed: stats.tracksProcessed,
+            songsUpserted: stats.songsUpserted,
+          },
+        });
+        stats.lastSyncUpdate = stats.processed;
+      }
+      
+      // Update timing and log progress (same as normal flow)
+      const releaseProcessingTime = Date.now() - releaseStartTime;
+      stats.totalProcessingTime += releaseProcessingTime;
+      
+      if (stats.processed % 100 === 0) {
+        const elapsed = (Date.now() - stats.startTime) / 1000;
+        const newlyProcessed = stats.processed - stats.skipped;
+        const rate = stats.processed > 0 ? stats.processed / elapsed : 0;
+        const avgProcessingTime = stats.processed > 0 ? (stats.totalProcessingTime / stats.processed).toFixed(1) : '0';
+        console.log(`   Total: ${stats.processed.toLocaleString()} | New: ${newlyProcessed.toLocaleString()} | Skipped: ${stats.skipped.toLocaleString()} | Created: ${stats.created.toLocaleString()} | Updated: ${stats.updated.toLocaleString()} | Tracks: ${stats.tracksProcessed.toLocaleString()} | Songs: ${stats.songsUpserted.toLocaleString()} | Errors: ${stats.errors} | Rate: ${rate.toFixed(0)}/s | Avg: ${avgProcessingTime}ms/release`);
+      }
+      
+      return;
+    } else if (existingRelease) {
+      // Release exists but this is a new dump - still process songs (in case of updates)
       releaseUuid = existingRelease.id;
       stats.skipped++;
     } else {
@@ -391,72 +502,41 @@ async function processRelease(releaseXml, parser, stats) {
       stats.created++;
     }
 
-    // Process release artists
-    const releaseArtistUuids = [];
+    // Process release artists - batch lookup
     const releaseArtistNames = artists.map(a => a.name).filter(Boolean);
+    const releaseArtistMap = await getOrCreateArtistsBatch(releaseArtistNames);
+    const releaseArtistUuids = releaseArtistNames
+      .map(name => releaseArtistMap.get(name))
+      .filter(Boolean);
     
-    for (const artist of artists) {
-      if (!artist.name) continue;
-
-      const artistName = String(artist.name).trim();
-
-      let dbArtist = await prisma.discogsArtist.findUnique({
-        where: { name: artistName },
-        select: { id: true },
-      });
-
-      if (!dbArtist) {
-        try {
-          dbArtist = await prisma.discogsArtist.create({
-            data: {
-              name: artistName,
-              lastUpdated: new Date(),
-            },
-            select: { id: true },
-          });
-        } catch (error) {
-          dbArtist = await prisma.discogsArtist.findUnique({
-            where: { name: artistName },
-            select: { id: true },
-          });
-          
-          if (!dbArtist) {
-            if (stats.errors <= 10) {
-              console.error(`Error creating/finding artist "${artistName}":`, error.message);
-            }
-            stats.errors++;
-            continue;
-          }
-        }
-      }
-
-      if (dbArtist) {
-        releaseArtistUuids.push(dbArtist.id);
-
-        try {
-          await prisma.discogsReleaseArtist.upsert({
-            where: {
-              releaseId_artistId: {
-                releaseId: releaseUuid,
-                artistId: dbArtist.id,
-              },
-            },
-            update: {},
-            create: {
+    // Link artists to release (sequential, blocking)
+    for (const artistId of releaseArtistUuids) {
+      try {
+        await prisma.discogsReleaseArtist.upsert({
+          where: {
+            releaseId_artistId: {
               releaseId: releaseUuid,
-              artistId: dbArtist.id,
+              artistId: artistId,
             },
-          });
-        } catch (error) {
-          if (stats.errors <= 10) {
-            console.error(`Error linking artist "${artistName}" to release:`, error.message);
-          }
-          stats.errors++;
+          },
+          update: {},
+          create: {
+            releaseId: releaseUuid,
+            artistId: artistId,
+          },
+        });
+      } catch (error) {
+        if (stats.errors <= 10) {
+          console.error(`Error linking artist to release:`, error.message);
         }
+        stats.errors++;
       }
     }
 
-    // Process tracks
+    // Collect all track artist names first (for batch processing)
+    const allTrackArtistNames = [];
+    const trackData = [];
+    
     for (const track of tracks) {
       if (!track.title) continue;
       
@@ -484,45 +564,55 @@ async function processRelease(releaseXml, parser, stats) {
         artistNamesToProcess = releaseArtistNames;
       }
       
-      // Get or create artist UUIDs for this track
-      const trackArtistUuids = [];
-      for (const artistName of artistNamesToProcess) {
-        if (!artistName) continue;
-        
-        let dbArtist = await prisma.discogsArtist.findUnique({
-          where: { name: artistName },
-          select: { id: true },
-        });
-        
-        if (!dbArtist) {
-          try {
-            dbArtist = await prisma.discogsArtist.create({
-              data: {
-                name: artistName,
-                lastUpdated: new Date(),
-              },
-              select: { id: true },
-            });
-          } catch (error) {
-            dbArtist = await prisma.discogsArtist.findUnique({
-              where: { name: artistName },
-              select: { id: true },
-            });
-            
-            if (!dbArtist) {
-              if (stats.errors <= 10) {
-                console.error(`Error creating/finding track artist "${artistName}":`, error.message);
-              }
-              stats.errors++;
-              continue;
-            }
-          }
-        }
-        
-        if (dbArtist) {
-          trackArtistUuids.push(dbArtist.id);
-        }
+      // Collect artist names for batch lookup
+      allTrackArtistNames.push(...artistNamesToProcess);
+      
+      trackData.push({
+        track,
+        songArtist,
+        artistNamesToProcess,
+      });
+    }
+    
+    // Batch lookup all track artists at once
+    const trackArtistMap = await getOrCreateArtistsBatch(allTrackArtistNames);
+    
+    // Get all existing songs for this release at once (batch song existence check)
+    const existingSongsForRelease = await prisma.song.findMany({
+      where: { releaseId: releaseUuid },
+      select: {
+        id: true,
+        youtubeId: true,
+        title: true,
+        artist: true,
+        discogsTrackPosition: true,
+      },
+    });
+    
+    // Create lookup maps for fast song matching
+    const songsByYoutubeId = new Map();
+    const songsByTitleArtist = new Map();
+    const songsByPosition = new Map();
+    
+    for (const song of existingSongsForRelease) {
+      if (song.youtubeId) {
+        songsByYoutubeId.set(song.youtubeId, song);
       }
+      if (song.title && song.artist) {
+        const key = `${song.title.toLowerCase()}|${song.artist.toLowerCase()}`;
+        songsByTitleArtist.set(key, song);
+      }
+      if (song.discogsTrackPosition) {
+        songsByPosition.set(song.discogsTrackPosition, song);
+      }
+    }
+    
+    // Process tracks (sequential, blocking)
+    for (const { track, songArtist, artistNamesToProcess } of trackData) {
+      // Get artist UUIDs from batch lookup
+      const trackArtistUuids = artistNamesToProcess
+        .map(name => trackArtistMap.get(name))
+        .filter(Boolean);
       
       // Try to match YouTube video
       let matchedVideo = null;
@@ -556,34 +646,19 @@ async function processRelease(releaseXml, parser, stats) {
         discogsLastUpdated: new Date(),
       };
       
-      // Try to find existing song
+      // Try to find existing song (using in-memory maps from batch query)
       let existingSong = null;
       if (songData.youtubeId) {
-        existingSong = await prisma.song.findUnique({
-          where: { youtubeId: songData.youtubeId },
-        });
+        existingSong = songsByYoutubeId.get(songData.youtubeId) || null;
       }
       
       if (!existingSong && songArtist) {
-        existingSong = await prisma.song.findFirst({
-          where: {
-            AND: [
-              { title: songData.title },
-              { artist: songArtist },
-            ],
-          },
-        });
+        const key = `${songData.title.toLowerCase()}|${songArtist.toLowerCase()}`;
+        existingSong = songsByTitleArtist.get(key) || null;
       }
       
-      if (!existingSong && songData.releaseId && songData.discogsTrackPosition) {
-        existingSong = await prisma.song.findFirst({
-          where: {
-            AND: [
-              { releaseId: songData.releaseId },
-              { discogsTrackPosition: songData.discogsTrackPosition },
-            ],
-          },
-        });
+      if (!existingSong && songData.discogsTrackPosition) {
+        existingSong = songsByPosition.get(songData.discogsTrackPosition) || null;
       }
       
       // Upsert song
