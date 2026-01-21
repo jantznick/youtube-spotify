@@ -231,6 +231,68 @@ function Player() {
     }
   };
 
+  // Check if song has ended and advance to next song
+  // This is needed because YouTube's onStateChange may not fire reliably when tab is inactive
+  const checkAndAdvanceIfEnded = () => {
+    if (!playerRef.current) return;
+    
+    try {
+      const playerState = playerRef.current.getPlayerState();
+      if (playerState === window.YT.PlayerState.ENDED) {
+        const state = playerStore.getState();
+        if (state.currentIndex < state.queue.length - 1) {
+          console.log('[Player] Song ended (detected via polling), advancing to next song');
+          state.nextSong();
+        }
+      }
+    } catch (error) {
+      // Player might not be ready, ignore
+      console.log('[Player] Could not check player state:', error);
+    }
+  };
+
+  // Periodic check when tab is inactive (slower polling to avoid performance issues)
+  useEffect(() => {
+    let intervalId = null;
+
+    const startPolling = () => {
+      if (document.hidden && playerRef.current) {
+        // Poll every 2 seconds when tab is inactive
+        intervalId = setInterval(() => {
+          checkAndAdvanceIfEnded();
+        }, 2000);
+      }
+    };
+
+    const stopPolling = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        startPolling();
+      } else {
+        stopPolling();
+        // Also check immediately when tab becomes visible
+        checkAndAdvanceIfEnded();
+      }
+    };
+
+    // Start polling if tab is already hidden
+    if (document.hidden) {
+      startPolling();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentSong]); // Re-run when song changes
+
   // Show toast and autoplay when song changes
   useEffect(() => {
     if (currentSong) {
